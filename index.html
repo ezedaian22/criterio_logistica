@@ -186,7 +186,32 @@ const useRutas = () => {
   };
   useEffect(()=>{fetch_();},[]);
   useEffect(()=>{
-    const ch=db.channel("rutas_rt").on("postgres_changes",{event:"*",schema:"public",table:"rutas"},()=>fetch_()).subscribe();
+    const ch=db.channel("rutas_rt").on("postgres_changes",{event:"UPDATE",schema:"public",table:"rutas"},(payload)=>{
+      fetch_();
+      // Notificar al admin cuando un chofer completa o actualiza algo
+      if(payload.new && payload.old){
+        const nuevasParadas = payload.new.paradas || [];
+        const viejasParadas = payload.old.paradas || [];
+        nuevasParadas.forEach(np=>{
+          const vp = viejasParadas.find(x=>x.id===np.id);
+          if(vp && vp.estado==="pendiente" && np.estado==="completada"){
+            const cam = CAMIONETAS.find(c=>c.id===payload.new.camionetaId);
+            if("Notification"in window&&Notification.permission==="granted"){
+              new Notification(`✅ ${cam?.chofer} completó una parada`,{
+                body:`${np.contacto?.name} — ${np.prendas?np.prendas+" prendas":""}${np.nota?` · "${np.nota}"`:""}`,
+                requireInteraction:false,
+              });
+            }
+            // Evento custom para mostrar toast en pantalla
+            window.dispatchEvent(new CustomEvent("criterio_update",{detail:{chofer:cam?.chofer,parada:np.contacto?.name,prendas:np.prendas,nota:np.nota,tipo:"completada"}}));
+          }
+          if(vp && vp.estado==="pendiente" && np.estado==="no_entregado"){
+            const cam = CAMIONETAS.find(c=>c.id===payload.new.camionetaId);
+            window.dispatchEvent(new CustomEvent("criterio_update",{detail:{chofer:cam?.chofer,parada:np.contacto?.name,tipo:"no_entregado"}}));
+          }
+        });
+      }
+    }).subscribe();
     return ()=>db.removeChannel(ch);
   },[]);
 
@@ -1246,6 +1271,19 @@ function App(){
 
   useEffect(()=>{if(user?.role==="chofer") setTab("rutas");},[user]);
   const [alertaParada,setAlertaParada] = useState(null);
+  const [toastAdmin,setToastAdmin] = useState(null);
+
+  // Escuchar actualizaciones de choferes (solo admin)
+  useEffect(()=>{
+    if(!user||user.role!=="admin") return;
+    const handler = (e)=>{
+      const {chofer,parada,prendas,nota,tipo} = e.detail;
+      setToastAdmin({chofer,parada,prendas,nota,tipo,ts:Date.now()});
+      setTimeout(()=>setToastAdmin(null),6000);
+    };
+    window.addEventListener("criterio_update",handler);
+    return ()=>window.removeEventListener("criterio_update",handler);
+  },[user]);
 
   useEffect(()=>{
     if("Notification"in window&&user?.role==="chofer"){
@@ -1295,6 +1333,24 @@ function App(){
 
   if(!user) return (<><style>{css}</style><Login onLogin={setUser}/></>);
 
+  // Toast para admin cuando chofer completa algo
+  const ToastAdmin = toastAdmin ? (
+    <div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",zIndex:9999,background:toastAdmin.tipo==="completada"?C.success:C.danger,padding:"12px 20px",borderRadius:12,boxShadow:"0 4px 20px rgba(0,0,0,.5)",minWidth:280,maxWidth:"90vw"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:20}}>{toastAdmin.tipo==="completada"?"✅":"❌"}</span>
+        <div style={{flex:1}}>
+          <p style={{fontWeight:700,fontSize:14,color:"#fff"}}>{toastAdmin.chofer} — {toastAdmin.parada}</p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,.85)"}}>
+            {toastAdmin.tipo==="completada"?"Completado":"No se pudo entregar"}
+            {toastAdmin.prendas&&` · ${toastAdmin.prendas} prendas`}
+            {toastAdmin.nota&&` · "${toastAdmin.nota}"`}
+          </p>
+        </div>
+        <button onClick={()=>setToastAdmin(null)} style={{background:"none",border:"none",color:"rgba(255,255,255,.7)",fontSize:18,cursor:"pointer"}}>✕</button>
+      </div>
+    </div>
+  ) : null;
+
   // Alerta flotante para chofer
   const AlertaFlotante = alertaParada ? (
     <div style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:C.danger,padding:"14px 20px",boxShadow:"0 4px 20px rgba(0,0,0,.6)"}}>
@@ -1328,6 +1384,7 @@ function App(){
     <>
       <style>{css}</style>
       {AlertaFlotante}
+      {ToastAdmin}
       <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",paddingTop:alertaParada?"60px":"0"}}>
         <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:100}}>
           <h1 style={{fontSize:24,color:C.accent,letterSpacing:2}}>CRITERIO</h1>
