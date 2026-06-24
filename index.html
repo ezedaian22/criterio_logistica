@@ -119,7 +119,7 @@ const Card = ({children,style={}}) => (
   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,...style}}>{children}</div>
 );
 const Modal = ({title,onClose,children}) => (
-  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"flex-start",justifyContent:"center",zIndex:1000,padding:16,paddingTop:24,overflowY:"auto"}}>
     <div className="fade-in" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:28,width:"100%",maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,color:C.accentLight}}>{title}</h3>
@@ -704,10 +704,12 @@ const Login = ({onLogin}) => {
 // ─── CONTACTOS ────────────────────────────────────────────────────────────────
 const ContactosPanel = ({contacts,add,update,del,loading}) => {
   const [filter,setFilter] = useState("todos");
+  const [search,setSearch] = useState("");
   const [modal,setModal] = useState(null);
   const [form,setForm] = useState({type:"taller",name:"",address:"",phone:"",notes:""});
   const [saving,setSaving] = useState(false);
-  const filtered = filter==="todos"?contacts:contacts.filter(c=>c.type===filter);
+  const byType = filter==="todos"?contacts:contacts.filter(c=>c.type===filter);
+  const filtered = search.trim()===""?byType:byType.filter(c=>c.name?.toLowerCase().includes(search.toLowerCase())||c.address?.toLowerCase().includes(search.toLowerCase()));
   const openNew = ()=>{setForm({type:"taller",name:"",address:"",phone:"",notes:""});setModal("new");};
   const openEdit = (c)=>{setForm({...c});setModal("edit");};
   const save_ = async()=>{
@@ -723,10 +725,22 @@ const ContactosPanel = ({contacts,add,update,del,loading}) => {
         <h2 style={{fontSize:28,color:C.accentLight}}>Contactos</h2>
         <Btn onClick={openNew}>+ Agregar</Btn>
       </div>
-      <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
         {["todos","taller","cliente","proveedor","botonera"].map(t=>(
           <button key={t} onClick={()=>setFilter(t)} style={{padding:"6px 16px",borderRadius:20,fontSize:13,cursor:"pointer",border:`1px solid ${filter===t?C.accent:C.border}`,background:filter===t?C.accent:"transparent",color:filter===t?"#000":C.muted}}>{t==="todos"?"Todos":typeLabel[t]}</button>
         ))}
+      </div>
+      <div style={{position:"relative",marginBottom:20}}>
+        <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:C.muted,fontSize:16,pointerEvents:"none"}}>🔍</span>
+        <input
+          value={search}
+          onChange={e=>setSearch(e.target.value)}
+          placeholder="Buscar por nombre o dirección..."
+          style={{width:"100%",paddingLeft:40,paddingRight:search?36:14,boxSizing:"border-box"}}
+        />
+        {search&&(
+          <button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
+        )}
       </div>
       <div style={{display:"grid",gap:12}}>
         {filtered.map(c=>(
