@@ -975,7 +975,12 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
 
   if(currentUser.role==="chofer"){
     if(loading) return <Loading text="Cargando ruta..."/>;
-    const ruta=rutas.find(r=>r.fecha===today()&&Number(r.camionetaId)===Number(currentUser.camionetaId));
+    // Si hay varias rutas del mismo día para esta camioneta (ej: se creó una nueva
+    // después de finalizar la anterior), priorizamos la que esté activa (no finalizada).
+    // Si todas están finalizadas, tomamos la más reciente (creada/horaInicio más tarde).
+    const rutasDelDia = rutas.filter(r=>r.fecha===today()&&Number(r.camionetaId)===Number(currentUser.camionetaId));
+    const rutaActiva = rutasDelDia.find(r=>r.estadoRuta!=="finalizada");
+    const ruta = rutaActiva || [...rutasDelDia].sort((a,b)=>(b.creada||"").localeCompare(a.creada||""))[0];
 
     // Registrar hora de inicio cuando el chofer abre la ruta por primera vez
     useEffect(()=>{
@@ -1649,7 +1654,8 @@ function App(){
 
   const checkParadas = useCallback((rutasData, userData) => {
     if(!userData||userData.role!=="chofer") return;
-    const ruta=rutasData.find(r=>r.fecha===today()&&Number(r.camionetaId)===Number(userData.camionetaId));
+    const rutasDelDia = rutasData.filter(r=>r.fecha===today()&&Number(r.camionetaId)===Number(userData.camionetaId));
+    const ruta = rutasDelDia.find(r=>r.estadoRuta!=="finalizada") || [...rutasDelDia].sort((a,b)=>(b.creada||"").localeCompare(a.creada||""))[0];
     if(!ruta) return;
     const pend=ruta.paradas.filter(p=>p.estado==="pendiente");
     if(pend.length>0){
