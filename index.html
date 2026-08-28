@@ -816,7 +816,7 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
       contacts.forEach(x=>{
         if(asignadosIds.has(String(x.id))) return; // ya es parada, no marcar doble
         if(!x.lat||!x.lng) return;
-        if(distKm(c.lat,c.lng,x.lat,x.lng)<=10) cercanosIds.add(String(x.id));
+        if(distKm(c.lat,c.lng,x.lat,x.lng)<=7) cercanosIds.add(String(x.id));
       });
     });
 
@@ -898,7 +898,7 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
     const resultado = [];
     contacts.forEach(c=>{
       if(!asignadosIds.has(String(c.id))||!c.lat||!c.lng) return;
-      const cerca = contacts.filter(x=>!asignadosIds.has(String(x.id))&&x.lat&&x.lng&&distKm(c.lat,c.lng,x.lat,x.lng)<=10);
+      const cerca = contacts.filter(x=>!asignadosIds.has(String(x.id))&&x.lat&&x.lng&&distKm(c.lat,c.lng,x.lat,x.lng)<=7);
       if(cerca.length>0) resultado.push({parada:c,cercanos:cerca});
     });
     return resultado;
@@ -926,7 +926,7 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
         {cercanosTotal.length>0&&(
           <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"#00E5FF"}}>
             <div style={{width:14,height:14,borderRadius:"50%",background:"#00E5FF",border:"2px solid white"}}/>
-            Cercanos (&lt;10 km)
+            Cercanos (&lt;7 km)
           </div>
         )}
       </div>
