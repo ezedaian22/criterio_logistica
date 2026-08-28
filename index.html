@@ -1355,23 +1355,28 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
           <div style={{flex:1,overflowY:"scroll",padding:"12px 16px",WebkitOverflowScrolling:"touch",minHeight:200}}>
             {/* Lista de asignados */}
             {Object.keys(asignacionesNuevaRuta).length>0&&(
-              <div style={{marginBottom:16}}>
-                <p style={{fontSize:12,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>
-                  Paradas asignadas ({Object.keys(asignacionesNuevaRuta).length})
+              <div style={{marginBottom:16,background:C.surface,borderRadius:12,padding:12,border:`1px solid ${C.border}`}}>
+                <p style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:10,fontWeight:700}}>
+                  ✅ Paradas asignadas ({Object.keys(asignacionesNuevaRuta).length})
                 </p>
-                {Object.entries(asignacionesNuevaRuta).map(([cid,camId])=>{
-                  const c=contacts.find(x=>x.id===cid||x.id===Number(cid));
-                  const cam=CAMIONETAS.find(x=>x.id===camId);
-                  if(!c) return null;
+                {CAMIONETAS.map(cam=>{
+                  const delCam=Object.entries(asignacionesNuevaRuta).filter(([,v])=>v===cam.id);
+                  if(delCam.length===0) return null;
                   return(
-                    <div key={cid} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
-                      <div style={{width:10,height:10,borderRadius:"50%",background:cam?.color,flexShrink:0}}/>
-                      <div style={{flex:1}}>
-                        <p style={{fontSize:13,fontWeight:600}}>{c.name}</p>
-                        <p style={{fontSize:11,color:C.muted}}>{cam?.chofer} · {typeLabel[c.type]}</p>
-                      </div>
-                      <button onClick={()=>setAsignacionesNuevaRuta(prev=>{const n={...prev};delete n[cid];return n;})}
-                        style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:16}}>✕</button>
+                    <div key={cam.id} style={{marginBottom:10}}>
+                      <p style={{fontSize:11,color:cam.color,fontWeight:700,marginBottom:4}}>🚐 {cam.chofer} — {delCam.length} parada{delCam.length>1?"s":""}</p>
+                      {delCam.map(([cid])=>{
+                        const c=contacts.find(x=>x.id===cid||x.id===Number(cid));
+                        if(!c) return null;
+                        return(
+                          <div key={cid} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",borderRadius:8,background:cam.color+"15",marginBottom:4}}>
+                            <span style={{flex:1,fontSize:13,fontWeight:600}}>{c.name}</span>
+                            <span style={{fontSize:11,color:C.muted}}>{typeLabel[c.type]}</span>
+                            <button onClick={()=>setAsignacionesNuevaRuta(prev=>{const n={...prev};delete n[cid];return n;})}
+                              style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14,lineHeight:1,padding:2}}>✕</button>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
