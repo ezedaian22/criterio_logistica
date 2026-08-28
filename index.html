@@ -788,11 +788,6 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markersRef = useRef({});
-  const [seleccionado,setSeleccionado] = useState(null);
-  const [cercanos,setCercanos] = useState([]);
-  // Refs para acceder a los valores actuales dentro de los listeners de Leaflet sin re-crear markers
-  const selRef = useRef(null);
-  const cercanosRef = useRef([]);
 
   const distKm = (lat1,lng1,lat2,lng2) => {
     const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
@@ -800,94 +795,114 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
     return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
   };
 
-  // Cuando cambia seleccionado: calcular cercanos y actualizar estilos de markers sin redibujar todo
-  useEffect(()=>{
-    selRef.current = seleccionado;
-    if(seleccionado&&seleccionado.lat&&seleccionado.lng){
-      const lista = contacts.filter(x=>String(x.id)!==String(seleccionado.id)&&x.lat&&x.lng&&distKm(seleccionado.lat,seleccionado.lng,x.lat,x.lng)<=10)
-        .sort((a,b)=>distKm(seleccionado.lat,seleccionado.lng,a.lat,a.lng)-distKm(seleccionado.lat,seleccionado.lng,b.lat,b.lng));
-      cercanosRef.current = lista;
-      setCercanos(lista);
-    } else {
-      cercanosRef.current = [];
-      setCercanos([]);
-    }
-    // Actualizar estilos de todos los markers existentes
-    Object.entries(markersRef.current).forEach(([cid,m])=>{
-      const c = contacts.find(x=>String(x.id)===String(cid));
-      if(!c) return;
-      const asig = asignaciones[c.id]||asignaciones[String(c.id)];
-      const cam = CAMIONETAS.find(x=>x.id===asig);
-      const esSel = seleccionado&&String(c.id)===String(seleccionado.id);
-      const esCercano = cercanosRef.current.some(x=>String(x.id)===String(c.id));
-      const dotColor = esSel?"#FFD700":esCercano?"#00E5FF":cam?cam.color:(typeColor[c.type]||"#888");
-      const size = esSel?36:esCercano?30:28;
-      const border = esSel?"3px solid #fff":esCercano?"2px solid #00E5FF":"3px solid white";
-      const inicial = esSel?"★":cam?cam.chofer[0]:(c.name||"?")[0].toUpperCase();
-      const icon = L.divIcon({
-        html:`<div style="background:${dotColor};width:${size}px;height:${size}px;border-radius:50%;border:${border};box-shadow:0 2px 10px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:${esSel?16:11}px;font-weight:800;color:#000">${inicial}</div>`,
-        iconSize:[size,size],iconAnchor:[size/2,size/2],className:""
-      });
-      m.setIcon(icon);
-    });
-  },[seleccionado,contacts,asignaciones]);
-
   useEffect(()=>{
     if(!mapRef.current||mapInstance.current) return;
     mapInstance.current = L.map(mapRef.current).setView([-34.64,-58.44],12);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(mapInstance.current);
   },[]);
 
+  // Cada vez que cambian asignaciones: actualizar iconos de todos los markers
   useEffect(()=>{
     if(!mapInstance.current) return;
-    Object.values(markersRef.current).forEach(m=>m.remove());
-    markersRef.current={};
 
+    // IDs de contactos asignados
+    const asignadosIds = new Set(Object.keys(asignaciones).map(String));
+
+    // Para cada asignado, calcular sus cercanos (que NO están asignados)
+    const cercanosIds = new Set();
     contacts.forEach(c=>{
+      if(!asignadosIds.has(String(c.id))) return;
       if(!c.lat||!c.lng) return;
-      const asig = asignaciones[c.id]||asignaciones[String(c.id)];
-      const cam = CAMIONETAS.find(x=>x.id===asig);
-      const dotColor = cam?cam.color:(typeColor[c.type]||"#888");
-      const inicial = cam?cam.chofer[0]:(c.name||"?")[0].toUpperCase();
-
-      const icon = L.divIcon({
-        html:`<div style="background:${dotColor};width:28px;height:28px;border-radius:50%;border:3px solid white;box-shadow:0 2px 10px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#000">${inicial}</div>`,
-        iconSize:[28,28],iconAnchor:[14,14],className:""
+      contacts.forEach(x=>{
+        if(asignadosIds.has(String(x.id))) return; // ya es parada, no marcar doble
+        if(!x.lat||!x.lng) return;
+        if(distKm(c.lat,c.lng,x.lat,x.lng)<=10) cercanosIds.add(String(x.id));
       });
-
-      const m = L.marker([c.lat,c.lng],{icon}).addTo(mapInstance.current);
-
-      const popup = document.createElement("div");
-      popup.style.cssText="font-family:'DM Sans',sans-serif;min-width:190px;";
-      popup.innerHTML=`
-        <div style="font-weight:700;font-size:14px;margin-bottom:2px;">${c.name}</div>
-        <div style="font-size:11px;color:#888;margin-bottom:2px;">${typeLabel[c.type]}</div>
-        <div style="font-size:12px;color:#666;margin-bottom:10px;">${c.address}</div>
-        <div style="display:flex;gap:6px;">
-          ${CAMIONETAS.map(x=>`
-            <button data-cid="${c.id}" data-cam="${x.id}"
-              style="flex:1;padding:8px 4px;border-radius:6px;border:2px solid ${x.color};
-              background:${asig===x.id?x.color:"transparent"};
-              color:${asig===x.id?"#000":x.color};
-              cursor:pointer;font-size:12px;font-weight:700;">
-              🚐 ${x.chofer}
-            </button>
-          `).join("")}
-        </div>
-      `;
-
-      popup.addEventListener("click",(e)=>{
-        const btnCam=e.target.closest("button[data-cam]");
-        if(btnCam){ onAsignar(btnCam.getAttribute("data-cid"),Number(btnCam.getAttribute("data-cam"))); mapInstance.current.closePopup(); }
-      });
-
-      // Al tocar el marker → automáticamente seleccionar y mostrar cercanos
-      m.on("click", ()=>{ setSeleccionado(c); });
-
-      m.bindPopup(popup,{maxWidth:240});
-      markersRef.current[c.id]=m;
     });
+
+    // Si no hay markers aún, crearlos; si ya existen, solo actualizar iconos
+    const yaExisten = Object.keys(markersRef.current).length > 0;
+
+    if(!yaExisten){
+      contacts.forEach(c=>{
+        if(!c.lat||!c.lng) return;
+        const asig = asignaciones[c.id]||asignaciones[String(c.id)];
+        const cam = CAMIONETAS.find(x=>x.id===asig);
+        const esAsig = asignadosIds.has(String(c.id));
+        const esCercano = cercanosIds.has(String(c.id));
+        const dotColor = esAsig?"#FFD700":esCercano?"#00E5FF":cam?cam.color:(typeColor[c.type]||"#888");
+        const size = esAsig?34:esCercano?30:26;
+        const border = esAsig?"3px solid #fff":esCercano?"2px solid #00E5FF":"2px solid white";
+        const inicial = esAsig?"★":cam?cam.chofer[0]:(c.name||"?")[0].toUpperCase();
+        const fontSize = esAsig?15:10;
+
+        const icon = L.divIcon({
+          html:`<div style="background:${dotColor};width:${size}px;height:${size}px;border-radius:50%;border:${border};box-shadow:0 2px 10px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:800;color:#000">${inicial}</div>`,
+          iconSize:[size,size],iconAnchor:[size/2,size/2],className:""
+        });
+
+        const m = L.marker([c.lat,c.lng],{icon}).addTo(mapInstance.current);
+
+        const popup = document.createElement("div");
+        popup.style.cssText="font-family:'DM Sans',sans-serif;min-width:190px;";
+        const asigActual = asignaciones[c.id]||asignaciones[String(c.id)];
+        popup.innerHTML=`
+          <div style="font-weight:700;font-size:14px;margin-bottom:2px;">${c.name}</div>
+          <div style="font-size:11px;color:#888;margin-bottom:2px;">${typeLabel[c.type]||""}</div>
+          <div style="font-size:12px;color:#666;margin-bottom:10px;">${c.address}</div>
+          <div style="display:flex;gap:6px;">
+            ${CAMIONETAS.map(x=>`
+              <button data-cid="${c.id}" data-cam="${x.id}"
+                style="flex:1;padding:8px 4px;border-radius:6px;border:2px solid ${x.color};
+                background:${asigActual===x.id?x.color:"transparent"};
+                color:${asigActual===x.id?"#000":x.color};
+                cursor:pointer;font-size:12px;font-weight:700;">
+                🚐 ${x.chofer}
+              </button>
+            `).join("")}
+          </div>
+        `;
+        popup.addEventListener("click",(e)=>{
+          const btn=e.target.closest("button[data-cam]");
+          if(btn){ onAsignar(btn.getAttribute("data-cid"),Number(btn.getAttribute("data-cam"))); mapInstance.current.closePopup(); }
+        });
+
+        m.bindPopup(popup,{maxWidth:240});
+        markersRef.current[c.id]=m;
+      });
+    } else {
+      // Solo actualizar iconos
+      Object.entries(markersRef.current).forEach(([cid,m])=>{
+        const c = contacts.find(x=>String(x.id)===String(cid));
+        if(!c) return;
+        const asig = asignaciones[c.id]||asignaciones[String(c.id)];
+        const cam = CAMIONETAS.find(x=>x.id===asig);
+        const esAsig = asignadosIds.has(String(c.id));
+        const esCercano = cercanosIds.has(String(c.id));
+        const dotColor = esAsig?"#FFD700":esCercano?"#00E5FF":cam?cam.color:(typeColor[c.type]||"#888");
+        const size = esAsig?34:esCercano?30:26;
+        const border = esAsig?"3px solid #fff":esCercano?"2px solid #00E5FF":"2px solid white";
+        const inicial = esAsig?"★":cam?cam.chofer[0]:(c.name||"?")[0].toUpperCase();
+        const fontSize = esAsig?15:10;
+        const icon = L.divIcon({
+          html:`<div style="background:${dotColor};width:${size}px;height:${size}px;border-radius:50%;border:${border};box-shadow:0 2px 10px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:800;color:#000">${inicial}</div>`,
+          iconSize:[size,size],iconAnchor:[size/2,size/2],className:""
+        });
+        m.setIcon(icon);
+      });
+    }
   },[contacts,asignaciones,onAsignar]);
+
+  const cercanosTotal = React.useMemo(()=>{
+    const asignadosIds = new Set(Object.keys(asignaciones).map(String));
+    const resultado = [];
+    contacts.forEach(c=>{
+      if(!asignadosIds.has(String(c.id))||!c.lat||!c.lng) return;
+      const cerca = contacts.filter(x=>!asignadosIds.has(String(x.id))&&x.lat&&x.lng&&distKm(c.lat,c.lng,x.lat,x.lng)<=10);
+      if(cerca.length>0) resultado.push({parada:c,cercanos:cerca});
+    });
+    return resultado;
+  },[contacts,asignaciones]);
 
   return(
     <div>
@@ -903,34 +918,33 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
           <div style={{width:14,height:14,borderRadius:"50%",background:"#888",border:"2px solid white"}}/>
           Sin asignar — {contacts.filter(c=>!asignaciones[c.id]&&!asignaciones[String(c.id)]).length}
         </div>
-      </div>
-      {seleccionado&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:14,marginBottom:8}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <span style={{fontWeight:700,color:"#FFD700",fontSize:14}}>★ {seleccionado.name}</span>
-            <button onClick={()=>{setSeleccionado(null);setCercanos([]);}} style={{background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer"}}>✕</button>
+        {Object.keys(asignaciones).length>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"#FFD700"}}>
+            <span>★</span> Paradas asignadas
           </div>
-          {cercanos.length===0
-            ? <p style={{color:C.muted,fontSize:13}}>No hay talleres con coordenadas a menos de 10 km.</p>
-            : <>
-                <p style={{color:"#00E5FF",fontSize:13,marginBottom:8,fontWeight:600}}>
-                  📍 {cercanos.length} taller{cercanos.length>1?"es":""} cerca (menos de 10 km):
-                </p>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {cercanos.map(x=>(
-                    <div key={x.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:"#00E5FF11",borderRadius:8,border:"1px solid #00E5FF33"}}>
-                      <div>
-                        <span style={{fontWeight:600,fontSize:13}}>{x.name}</span>
-                        <span style={{color:C.muted,fontSize:12,marginLeft:8}}>{x.address}</span>
-                      </div>
-                      <span style={{color:"#00E5FF",fontSize:12,fontWeight:700,flexShrink:0,marginLeft:8}}>
-                        {distKm(seleccionado.lat,seleccionado.lng,x.lat,x.lng).toFixed(1)} km
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </>
-          }
+        )}
+        {cercanosTotal.length>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"#00E5FF"}}>
+            <div style={{width:14,height:14,borderRadius:"50%",background:"#00E5FF",border:"2px solid white"}}/>
+            Cercanos (&lt;10 km)
+          </div>
+        )}
+      </div>
+      {cercanosTotal.length>0&&(
+        <div style={{background:C.surface,border:`1px solid #00E5FF33`,borderRadius:12,padding:12,marginBottom:8}}>
+          {cercanosTotal.map(({parada,cercanos})=>(
+            <div key={parada.id} style={{marginBottom:cercanos.length>0?10:0}}>
+              <p style={{fontSize:12,color:"#FFD700",fontWeight:700,marginBottom:4}}>★ {parada.name} — {cercanos.length} taller{cercanos.length>1?"es":""} cerca:</p>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {cercanos.map(x=>(
+                  <div key={x.id} style={{display:"flex",justifyContent:"space-between",padding:"4px 8px",background:"#00E5FF0D",borderRadius:7,border:"1px solid #00E5FF22"}}>
+                    <span style={{fontSize:12,color:"#00E5FF",fontWeight:600}}>{x.name}</span>
+                    <span style={{fontSize:11,color:C.muted}}>{distKm(parada.lat,parada.lng,x.lat,x.lng).toFixed(1)} km</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -1370,6 +1384,7 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
                         if(!c) return null;
                         return(
                           <div key={cid} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",borderRadius:8,background:cam.color+"15",marginBottom:4}}>
+                            <span style={{fontSize:13,color:"#FFD700"}}>★</span>
                             <span style={{flex:1,fontSize:13,fontWeight:600}}>{c.name}</span>
                             <span style={{fontSize:11,color:C.muted}}>{typeLabel[c.type]}</span>
                             <button onClick={()=>setAsignacionesNuevaRuta(prev=>{const n={...prev};delete n[cid];return n;})}
