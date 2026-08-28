@@ -788,23 +788,49 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markersRef = useRef({});
-  const [seleccionado,setSeleccionado] = useState(null); // contacto seleccionado
-  const [cercanos,setCercanos] = useState([]);            // lista de cercanos
+  const [seleccionado,setSeleccionado] = useState(null);
+  const [cercanos,setCercanos] = useState([]);
+  // Refs para acceder a los valores actuales dentro de los listeners de Leaflet sin re-crear markers
+  const selRef = useRef(null);
+  const cercanosRef = useRef([]);
 
-  // Haversine: distancia en km entre dos coords
   const distKm = (lat1,lng1,lat2,lng2) => {
     const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
     const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
     return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
   };
 
-  const handleSelect = useCallback((c) => {
-    setSeleccionado(c);
-    if(!c.lat||!c.lng){ setCercanos([]); return; }
-    const lista = contacts.filter(x=>x.id!==c.id&&x.lat&&x.lng&&distKm(c.lat,c.lng,x.lat,x.lng)<=10)
-      .sort((a,b)=>distKm(c.lat,c.lng,a.lat,a.lng)-distKm(c.lat,c.lng,b.lat,b.lng));
-    setCercanos(lista);
-  },[contacts]);
+  // Cuando cambia seleccionado: calcular cercanos y actualizar estilos de markers sin redibujar todo
+  useEffect(()=>{
+    selRef.current = seleccionado;
+    if(seleccionado&&seleccionado.lat&&seleccionado.lng){
+      const lista = contacts.filter(x=>String(x.id)!==String(seleccionado.id)&&x.lat&&x.lng&&distKm(seleccionado.lat,seleccionado.lng,x.lat,x.lng)<=10)
+        .sort((a,b)=>distKm(seleccionado.lat,seleccionado.lng,a.lat,a.lng)-distKm(seleccionado.lat,seleccionado.lng,b.lat,b.lng));
+      cercanosRef.current = lista;
+      setCercanos(lista);
+    } else {
+      cercanosRef.current = [];
+      setCercanos([]);
+    }
+    // Actualizar estilos de todos los markers existentes
+    Object.entries(markersRef.current).forEach(([cid,m])=>{
+      const c = contacts.find(x=>String(x.id)===String(cid));
+      if(!c) return;
+      const asig = asignaciones[c.id]||asignaciones[String(c.id)];
+      const cam = CAMIONETAS.find(x=>x.id===asig);
+      const esSel = seleccionado&&String(c.id)===String(seleccionado.id);
+      const esCercano = cercanosRef.current.some(x=>String(x.id)===String(c.id));
+      const dotColor = esSel?"#FFD700":esCercano?"#00E5FF":cam?cam.color:(typeColor[c.type]||"#888");
+      const size = esSel?36:esCercano?30:28;
+      const border = esSel?"3px solid #fff":esCercano?"2px solid #00E5FF":"3px solid white";
+      const inicial = esSel?"★":cam?cam.chofer[0]:(c.name||"?")[0].toUpperCase();
+      const icon = L.divIcon({
+        html:`<div style="background:${dotColor};width:${size}px;height:${size}px;border-radius:50%;border:${border};box-shadow:0 2px 10px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:${esSel?16:11}px;font-weight:800;color:#000">${inicial}</div>`,
+        iconSize:[size,size],iconAnchor:[size/2,size/2],className:""
+      });
+      m.setIcon(icon);
+    });
+  },[seleccionado,contacts,asignaciones]);
 
   useEffect(()=>{
     if(!mapRef.current||mapInstance.current) return;
@@ -817,22 +843,16 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
     Object.values(markersRef.current).forEach(m=>m.remove());
     markersRef.current={};
 
-    const cercanosIds = new Set(cercanos.map(x=>String(x.id)));
-
     contacts.forEach(c=>{
       if(!c.lat||!c.lng) return;
       const asig = asignaciones[c.id]||asignaciones[String(c.id)];
       const cam = CAMIONETAS.find(x=>x.id===asig);
-      const esSel = seleccionado&&String(c.id)===String(seleccionado.id);
-      const esCercano = cercanosIds.has(String(c.id));
-      const dotColor = esSel ? "#FFD700" : esCercano ? "#00E5FF" : cam ? cam.color : (typeColor[c.type]||"#888");
-      const size = esSel ? 36 : esCercano ? 30 : 28;
-      const border = esSel ? "3px solid #fff" : esCercano ? "2px solid #00E5FF" : "3px solid white";
-      const inicial = esSel ? "★" : cam ? cam.chofer[0] : (c.name||"?")[0].toUpperCase();
+      const dotColor = cam?cam.color:(typeColor[c.type]||"#888");
+      const inicial = cam?cam.chofer[0]:(c.name||"?")[0].toUpperCase();
 
       const icon = L.divIcon({
-        html:`<div style="background:${dotColor};width:${size}px;height:${size}px;border-radius:50%;border:${border};box-shadow:0 2px 10px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:${esSel?16:11}px;font-weight:800;color:#000">${inicial}</div>`,
-        iconSize:[size,size],iconAnchor:[size/2,size/2],className:""
+        html:`<div style="background:${dotColor};width:28px;height:28px;border-radius:50%;border:3px solid white;box-shadow:0 2px 10px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#000">${inicial}</div>`,
+        iconSize:[28,28],iconAnchor:[14,14],className:""
       });
 
       const m = L.marker([c.lat,c.lng],{icon}).addTo(mapInstance.current);
@@ -861,13 +881,13 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
         if(btnCam){ onAsignar(btnCam.getAttribute("data-cid"),Number(btnCam.getAttribute("data-cam"))); mapInstance.current.closePopup(); }
       });
 
-      // Al abrir el popup, seleccionar automáticamente el taller y mostrar cercanos
-      m.on("popupopen", ()=>{ handleSelect(c); });
+      // Al tocar el marker → automáticamente seleccionar y mostrar cercanos
+      m.on("click", ()=>{ setSeleccionado(c); });
 
       m.bindPopup(popup,{maxWidth:240});
       markersRef.current[c.id]=m;
     });
-  },[contacts,asignaciones,onAsignar,seleccionado,cercanos,handleSelect]);
+  },[contacts,asignaciones,onAsignar]);
 
   return(
     <div>
