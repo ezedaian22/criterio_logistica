@@ -202,7 +202,28 @@ const useContacts = () => {
     await db.from("contacts").delete().eq("id",id);
     setContacts(prev=>prev.filter(x=>x.id!==id));
   };
-  return {contacts,loading,add,update,del};
+  // Reintenta ubicar en el mapa a los contactos que tienen direccion pero no coordenadas.
+  // Nominatim pide maximo 1 consulta por segundo, por eso la espera entre cada una.
+  const geocodeMissing = async(onProgress) => {
+    const faltantes = contacts.filter(c=>c.address && (!c.lat || !c.lng));
+    const fallidos = [];
+    let ok = 0;
+    for(let i=0;i<faltantes.length;i++){
+      const c = faltantes[i];
+      const coords = await geocode(c.address);
+      if(coords.lat && coords.lng){
+        await db.from("contacts").update({lat:coords.lat,lng:coords.lng}).eq("id",c.id);
+        setContacts(prev=>prev.map(x=>x.id===c.id?{...x,lat:coords.lat,lng:coords.lng}:x));
+        ok++;
+      } else {
+        fallidos.push(c.name);
+      }
+      if(onProgress) onProgress({hechos:i+1,total:faltantes.length,ok,fallidos:[...fallidos]});
+      if(i<faltantes.length-1) await new Promise(r=>setTimeout(r,1100));
+    }
+    return {total:faltantes.length,ok,fallidos};
+  };
+  return {contacts,loading,add,update,del,geocodeMissing};
 };
 
 const useRutas = () => {
@@ -702,9 +723,11 @@ const Login = ({onLogin}) => {
 };
 
 // ─── CONTACTOS ────────────────────────────────────────────────────────────────
-const ContactosPanel = ({contacts,add,update,del,loading}) => {
+const ContactosPanel = ({contacts,add,update,del,loading,geocodeMissing}) => {
   const [filter,setFilter] = useState("todos");
   const [search,setSearch] = useState("");
+  const [geoProg,setGeoProg] = useState(null);
+  const [geoResult,setGeoResult] = useState(null);
   const [modal,setModal] = useState(null);
   const [form,setForm] = useState({type:"taller",name:"",address:"",phone:"",notes:""});
   const [saving,setSaving] = useState(false);
@@ -742,6 +765,46 @@ const ContactosPanel = ({contacts,add,update,del,loading}) => {
           <button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
         )}
       </div>
+      {(()=>{
+        const sinCoords = contacts.filter(c=>c.address&&(!c.lat||!c.lng));
+        if(sinCoords.length===0&&!geoResult) return null;
+        return(
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:12,marginBottom:16}}>
+            {sinCoords.length>0&&(
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <span style={{fontSize:13,color:C.muted,flex:1,minWidth:180}}>
+                  ⚠️ {sinCoords.length} contacto{sinCoords.length>1?"s":""} sin ubicación en el mapa (no aparecen ni se calculan cercanos).
+                </span>
+                <button
+                  disabled={!!geoProg}
+                  onClick={async()=>{
+                    setGeoResult(null);
+                    setGeoProg({hechos:0,total:sinCoords.length,ok:0,fallidos:[]});
+                    const r = await geocodeMissing(p=>setGeoProg(p));
+                    setGeoProg(null);
+                    setGeoResult(r);
+                  }}
+                  style={{padding:"8px 14px",borderRadius:8,border:`1px solid ${C.accent}`,background:geoProg?"transparent":C.accent,color:geoProg?C.muted:"#000",cursor:geoProg?"default":"pointer",fontSize:13,fontWeight:700}}>
+                  {geoProg?`Ubicando ${geoProg.hechos}/${geoProg.total}...`:"📍 Ubicar en el mapa"}
+                </button>
+              </div>
+            )}
+            {geoResult&&(
+              <div style={{marginTop:sinCoords.length>0?10:0}}>
+                <p style={{fontSize:13,color:C.accent,fontWeight:600}}>
+                  Se ubicaron {geoResult.ok} de {geoResult.total}.
+                </p>
+                {geoResult.fallidos.length>0&&(
+                  <p style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.4}}>
+                    No se pudo ubicar: {geoResult.fallidos.join(", ")}. Editá esos contactos y escribí la dirección más completa (calle + altura + localidad).
+                  </p>
+                )}
+                <button onClick={()=>setGeoResult(null)} style={{marginTop:6,background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer",padding:0}}>Ocultar</button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
       <div style={{display:"grid",gap:12}}>
         {filtered.map(c=>(
           <Card key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
@@ -751,6 +814,9 @@ const ContactosPanel = ({contacts,add,update,del,loading}) => {
                 <span style={{fontWeight:600}}>{c.name}</span>
               </div>
               <p style={{color:C.muted,fontSize:13}}>📍 {c.address}</p>
+                {c.address&&(!c.lat||!c.lng)&&(
+                  <p style={{color:C.danger,fontSize:12,marginTop:2}}>⚠️ Sin ubicación en el mapa</p>
+                )}
               {c.phone&&<p style={{color:C.muted,fontSize:13}}>📞 {c.phone}</p>}
               {c.notes&&<p style={{color:C.muted,fontSize:12,marginTop:4,fontStyle:"italic"}}>{c.notes}</p>}
             </div>
@@ -1387,30 +1453,42 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
 
             {/* Lateral derecho — cercanos */}
             {(()=>{
+              const R=6371;
+              const dkm=(lat1,lng1,lat2,lng2)=>{const dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));};
               const asignadosIds = new Set(Object.keys(asignacionesNuevaRuta).map(String));
-              const allContacts = contacts.filter(c=>c.lat&&c.lng);
-              const resultado = [];
-              allContacts.forEach(c=>{
-                if(!asignadosIds.has(String(c.id))) return;
-                const cerca = allContacts.filter(x=>!asignadosIds.has(String(x.id))&&x.lat&&x.lng);
-                const R=6371;
-                const distKm2=(lat1,lng1,lat2,lng2)=>{const dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));};
-                const cercaFiltrado = cerca.filter(x=>distKm2(c.lat,c.lng,x.lat,x.lng)<=5).sort((a,b)=>distKm2(c.lat,c.lng,a.lat,a.lng)-distKm2(c.lat,c.lng,b.lat,b.lng));
-                if(cercaFiltrado.length>0) resultado.push({parada:c,cercanos:cercaFiltrado,distKm2});
+              // TODAS las paradas asignadas, tengan o no coordenadas
+              const asignadas = Object.keys(asignacionesNuevaRuta)
+                .map(cid=>contacts.find(x=>String(x.id)===String(cid)))
+                .filter(Boolean);
+              const conCoords = contacts.filter(c=>c.lat&&c.lng);
+              const filas = asignadas.map(c=>{
+                if(!c.lat||!c.lng) return {parada:c,estado:"sincoords",cercanos:[]};
+                const cerca = conCoords
+                  .filter(x=>!asignadosIds.has(String(x.id))&&dkm(c.lat,c.lng,x.lat,x.lng)<=5)
+                  .sort((a,b)=>dkm(c.lat,c.lng,a.lat,a.lng)-dkm(c.lat,c.lng,b.lat,b.lng));
+                return {parada:c,estado:cerca.length?"ok":"vacio",cercanos:cerca};
               });
-              const R2=6371;
-              const dkm=(lat1,lng1,lat2,lng2)=>{const dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;return R2*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));};
               return(
-                <div style={{width:280,flexShrink:0,borderLeft:`1px solid ${C.border}`,background:"#0a0a0a",display:"flex",flexDirection:"column",overflowY:"auto"}}>
+                <div style={{width:280,flexShrink:0,borderLeft:`1px solid ${C.border}`,background:"#0a0a0a",display:"flex",flexDirection:"column",overflow:"hidden"}}>
                   <div style={{padding:"10px 12px",borderBottom:`1px solid #00E5FF33`,flexShrink:0}}>
                     <p style={{fontSize:11,color:"#00E5FF",fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📍 Cercanos &lt;5 km</p>
                   </div>
-                  <div style={{flex:1,overflowY:"auto",padding:"10px 12px"}}>
-                    {resultado.length===0
+                  <div style={{flex:1,minHeight:0,overflowY:"auto",padding:"10px 12px"}}>
+                    {filas.length===0
                       ? <p style={{fontSize:13,color:C.muted,textAlign:"center",marginTop:30,lineHeight:1.5}}>Asigná una parada para ver talleres cercanos</p>
-                      : resultado.map(({parada,cercanos})=>(
+                      : filas.map(({parada,estado,cercanos})=>(
                           <div key={parada.id} style={{marginBottom:14}}>
                             <p style={{fontSize:13,color:"#FFD700",fontWeight:700,marginBottom:6,lineHeight:1.3}}>★ {parada.name}</p>
+                            {estado==="sincoords"&&(
+                              <p style={{fontSize:12,color:C.muted,lineHeight:1.4,padding:"5px 7px",background:"#ffffff08",borderRadius:7}}>
+                                Sin dirección ubicada en el mapa, no se pueden calcular cercanos.
+                              </p>
+                            )}
+                            {estado==="vacio"&&(
+                              <p style={{fontSize:12,color:C.muted,lineHeight:1.4,padding:"5px 7px",background:"#ffffff08",borderRadius:7}}>
+                                Sin talleres a menos de 5 km.
+                              </p>
+                            )}
                             {cercanos.map(x=>(
                               <div key={x.id} style={{padding:"5px 7px",background:"#00E5FF0D",borderRadius:7,border:"1px solid #00E5FF22",marginBottom:4}}>
                                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:4}}>
@@ -1715,7 +1793,7 @@ const HistorialPanel = ({rutas,loading,eliminarRuta}) => {
 function App(){
   const [user,setUser] = useState(null);
   const [tab,setTab] = useState("rutas");
-  const {contacts,loading:cL,add,update,del} = useContacts();
+  const {contacts,loading:cL,add,update,del,geocodeMissing} = useContacts();
   const {rutas,loading:rL,add:addRuta,updateParadas,confirmarRuta,finalizarRuta,eliminarRuta} = useRutas();
   const {consultas,save:saveConsulta} = useConsultas();
 
@@ -1866,7 +1944,7 @@ function App(){
         <div style={{flex:1,padding:"24px 20px",maxWidth:800,margin:"0 auto",width:"100%"}}>
           {tab==="rutas"&&<RutasPanel contacts={contacts} rutas={rutas} addRuta={addRuta} updateParadas={updateParadas} confirmarRuta={confirmarRuta} finalizarRuta={finalizarRuta} eliminarRuta={eliminarRuta} loading={rL} currentUser={user} paradaActual={paradaActual}/>}
           {tab==="consulta"&&isAdmin&&<ConsultaPanel contacts={contacts} consultas={consultas} saveConsulta={saveConsulta} addRuta={addRuta} onRutasCreadas={()=>setTab("rutas")}/>}
-          {tab==="contactos"&&isAdmin&&<ContactosPanel contacts={contacts} add={add} update={update} del={del} loading={cL}/>}
+          {tab==="contactos"&&isAdmin&&<ContactosPanel contacts={contacts} add={add} update={update} del={del} loading={cL} geocodeMissing={geocodeMissing}/>}
           {tab==="resumen"&&isAdmin&&<ResumenPanel rutas={rutas} loading={rL}/>}
           {tab==="historial"&&isAdmin&&<HistorialPanel rutas={rutas} loading={rL} eliminarRuta={eliminarRuta}/>}
         </div>
