@@ -146,7 +146,8 @@ const useContacts = () => {
   const [loading,setLoading] = useState(true);
 
   const fetch_ = async () => {
-    const {data,error} = await db.from("contacts").select("*").order("name");
+    // borrado=false: los contactos no se borran de verdad, se marcan. Ver `del`.
+    const {data,error} = await db.from("contacts").select("*").eq("borrado",false).order("name");
     if(error){ reportError("cargar contactos", error); setLoading(false); return; }
     setContacts(data || []);
     setLoading(false);
@@ -197,8 +198,11 @@ const useContacts = () => {
     setContacts(prev=>prev.map(x=>x.id===c.id?updated:x));
     return true;
   };
+  // Borrado lógico: se marca la fila, no se elimina. Así la base puede prohibir
+  // DELETE por RLS (nadie puede vaciar la tabla desde afuera) sin que se caiga
+  // el botón de borrar. Para recuperar algo: borrado=false desde Supabase.
   const del = async(id) => {
-    const {error} = await db.from("contacts").delete().eq("id",id);
+    const {error} = await db.from("contacts").update({borrado:true}).eq("id",id);
     if(error){ reportError("borrar el contacto", error); return false; }
     setContacts(prev=>prev.filter(x=>x.id!==id));
     return true;
@@ -268,7 +272,8 @@ const useRutas = () => {
   };
 
   const fetch_ = async(conAviso) => {
-    const {data,error}=await db.from("rutas").select("*").order("fecha",{ascending:false}).limit(60);
+    // borrado=false: las rutas no se borran de verdad, se marcan. Ver `eliminarRuta`.
+    const {data,error}=await db.from("rutas").select("*").eq("borrado",false).order("fecha",{ascending:false}).limit(60);
     if(error){ reportError("cargar las rutas", error); setLoading(false); return; }
     const nuevas = data||[];
     if(conAviso) detectarCambios(rutasRef.current, nuevas);
@@ -349,8 +354,10 @@ const useRutas = () => {
     aplicar(rutasRef.current.map(r=>r.id===rutaId?{...r,estadoRuta:"finalizada",horaFin}:r));
     return true;
   };
+  // Borrado lógico, igual que en contactos: la ruta se marca y desaparece de la
+  // app, pero la fila queda. Se puede recuperar poniendo borrado=false.
   const eliminarRuta = async(rutaId) => {
-    const {error}=await db.from("rutas").delete().eq("id",rutaId);
+    const {error}=await db.from("rutas").update({borrado:true}).eq("id",rutaId);
     if(error){ reportError("eliminar la ruta", error); return false; }
     aplicar(rutasRef.current.filter(r=>r.id!==rutaId));
     return true;
