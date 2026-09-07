@@ -330,15 +330,40 @@ const useRutas = () => {
     return true;
   };
 
-  const updateParadas = (rutaId,paradas) => enCola(()=>escribirParadas(rutaId,paradas));
+  // Relee la ruta de la base justo antes de escribir. Es lo que evita que dos
+  // aparatos se pisen: si el admin agregó una parada hace un segundo desde la
+  // compu, el chofer la toma en cuenta en vez de mandar su copia vieja y
+  // borrarla. La ventana de choque baja de minutos a un viaje de ida y vuelta.
+  const leerParadas = async(rutaId) => {
+    const {data,error} = await db.from("rutas").select("paradas,borrado").eq("id",rutaId).maybeSingle();
+    if(error){ reportError("leer la ruta antes de guardar", error); return null; }
+    if(!data){ reportError("guardar los cambios", {message:"Esa ruta ya no existe."}); return null; }
+    if(data.borrado){ reportError("guardar los cambios", {message:"Esa ruta fue eliminada."}); return null; }
+    return data.paradas || [];
+  };
 
-  // Cambia UNA parada leyendo siempre la versión más fresca que tenemos, en vez
-  // de trabajar sobre la copia que había cuando se dibujó la pantalla.
+  // Las tres operaciones sobre paradas. Todas releen, aplican el cambio sobre lo
+  // que hay ahora y recién ahí escriben.
   const actualizarParada = (rutaId,paradaId,updates) => enCola(async()=>{
-    const ruta = rutasRef.current.find(r=>r.id===rutaId);
-    if(!ruta){ reportError("guardar los cambios de la ruta", {message:"La ruta ya no existe."}); return false; }
-    const nuevas = (ruta.paradas||[]).map(p=>p.id===paradaId?{...p,...updates}:p);
-    return escribirParadas(rutaId,nuevas);
+    const actuales = await leerParadas(rutaId);
+    if(!actuales) return false;
+    if(!actuales.some(p=>p.id===paradaId)){
+      reportError("guardar los cambios", {message:"Esa parada ya no está en la ruta."});
+      return false;
+    }
+    return escribirParadas(rutaId, actuales.map(p=>p.id===paradaId?{...p,...updates}:p));
+  });
+
+  const agregarParada = (rutaId,parada) => enCola(async()=>{
+    const actuales = await leerParadas(rutaId);
+    if(!actuales) return false;
+    return escribirParadas(rutaId, [...actuales, parada]);
+  });
+
+  const quitarParada = (rutaId,paradaId) => enCola(async()=>{
+    const actuales = await leerParadas(rutaId);
+    if(!actuales) return false;
+    return escribirParadas(rutaId, actuales.filter(p=>p.id!==paradaId));
   });
 
   const confirmarRuta = async(rutaId) => {
@@ -362,7 +387,7 @@ const useRutas = () => {
     aplicar(rutasRef.current.filter(r=>r.id!==rutaId));
     return true;
   };
-  return {rutas,loading,add,updateParadas,actualizarParada,confirmarRuta,finalizarRuta,eliminarRuta};
+  return {rutas,loading,add,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta};
 };
 
 const useConsultas = () => {
@@ -1096,7 +1121,7 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
   );
 };
 
-const RutasPanel = ({contacts,rutas,addRuta,updateParadas,actualizarParada,confirmarRuta,finalizarRuta,eliminarRuta,loading,currentUser,paradaActual}) => {
+const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta,loading,currentUser,paradaActual}) => {
   const [fecha,setFecha] = useState(today());
   const [modal,setModal] = useState(false);
   const [camId,setCamId] = useState(1);
@@ -1126,7 +1151,7 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,actualizarParada,confi
       const ruta=rutas.find(r=>r.id===modalExtra?.rutaId);
       if(!ruta) return;
       const nuevaParada={id:uid(),contacto:selContactExtra,tipo:tipoExtra,estado:"pendiente",retirar:false,entregarBolsa:false,entregarCorte:false,entregarTela:false,prioritario:false,horaPriority:"",prendas:"",emergencia:modalExtra?.emergencia||false};
-      updateParadas(ruta.id,[...ruta.paradas,nuevaParada]);
+      agregarParada(ruta.id,nuevaParada);
       setContactoExtra("");
     }
   };
@@ -1135,7 +1160,7 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,actualizarParada,confi
     const ruta=rutas.find(r=>r.id===modalExtra?.rutaId);
     if(!ruta) return;
     const nuevaParada={id:uid(),contacto:formTallerExtra.contacto,tipo:"taller",estado:"pendiente",prendas:"",...opc};
-    await updateParadas(ruta.id,[...ruta.paradas,nuevaParada]);
+    await agregarParada(ruta.id,nuevaParada);
     setFormTallerExtra(null);setContactoExtra("");
   };
 
@@ -1211,7 +1236,7 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,actualizarParada,confi
     const ruta = rutaActiva || [...rutasDelDia].sort((a,b)=>(b.creada||"").localeCompare(a.creada||""))[0];
 
     // Registrar hora de inicio cuando el chofer abre la ruta por primera vez.
-    // Se sacó el updateParadas() que había acá: reescribía las paradas sin
+    // Se sacó la reescritura de paradas que había acá: las reescribía sin
     // cambiarlas solo para "disparar" el update, y ahora que una ruta con todas
     // las paradas resueltas se autofinaliza, esa escritura de más podía volver a
     // finalizar una ruta que el chofer acababa de reabrir. El update de abajo ya
@@ -1712,11 +1737,8 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,actualizarParada,confi
           </div>
           <div style={{display:"flex",gap:10,marginTop:8}}>
             <Btn onClick={async()=>{
-              const ruta=rutas.find(r=>r.id===editandoAccionRuta.rutaId);
-              if(!ruta) return;
-              const nuevasParadas=ruta.paradas.map(p=>p.id===editandoAccionRuta.paradaId?{...p,...editandoAccionRuta.acc}:p);
-              await updateParadas(ruta.id,nuevasParadas);
-              setEditandoAccionRuta(null);
+              const ok = await actualizarParada(editandoAccionRuta.rutaId, editandoAccionRuta.paradaId, editandoAccionRuta.acc);
+              if(ok) setEditandoAccionRuta(null);
             }} style={{flex:1}}>Guardar</Btn>
             <Btn onClick={()=>setEditandoAccionRuta(null)} outline style={{flex:1}}>Cancelar</Btn>
           </div>
@@ -1732,8 +1754,9 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,actualizarParada,confi
                 <p style={{color:C.muted,fontSize:12}}>{paradaDesc(p)}</p>
               </div>
               <Btn small color={C.danger} onClick={async()=>{
+                const ok = await quitarParada(modalEliminar.rutaId, p.id);
+                if(!ok) return;
                 const nuevas=modalEliminar.paradas.filter(x=>x.id!==p.id);
-                await updateParadas(modalEliminar.rutaId,nuevas);
                 if(nuevas.length===0){setModalEliminar(null);}
                 else{setModalEliminar({...modalEliminar,paradas:nuevas});}
               }}>Eliminar</Btn>
@@ -1925,7 +1948,7 @@ function App(){
   const [user,setUser] = useState(null);
   const [tab,setTab] = useState("rutas");
   const {contacts,loading:cL,add,update,del,geocodeMissing} = useContacts();
-  const {rutas,loading:rL,add:addRuta,updateParadas,actualizarParada,confirmarRuta,finalizarRuta,eliminarRuta} = useRutas();
+  const {rutas,loading:rL,add:addRuta,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta} = useRutas();
   const {consultas,save:saveConsulta} = useConsultas();
 
   useEffect(()=>{if(user?.role==="chofer") setTab("rutas");},[user]);
@@ -2109,7 +2132,7 @@ function App(){
           ))}
         </div>
         <div style={{flex:1,padding:"24px 20px",maxWidth:800,margin:"0 auto",width:"100%"}}>
-          {tab==="rutas"&&<RutasPanel contacts={contacts} rutas={rutas} addRuta={addRuta} updateParadas={updateParadas} actualizarParada={actualizarParada} confirmarRuta={confirmarRuta} finalizarRuta={finalizarRuta} eliminarRuta={eliminarRuta} loading={rL} currentUser={user} paradaActual={paradaActual}/>}
+          {tab==="rutas"&&<RutasPanel contacts={contacts} rutas={rutas} addRuta={addRuta} actualizarParada={actualizarParada} agregarParada={agregarParada} quitarParada={quitarParada} confirmarRuta={confirmarRuta} finalizarRuta={finalizarRuta} eliminarRuta={eliminarRuta} loading={rL} currentUser={user} paradaActual={paradaActual}/>}
           {tab==="consulta"&&isAdmin&&<ConsultaPanel contacts={contacts} consultas={consultas} saveConsulta={saveConsulta} addRuta={addRuta} onRutasCreadas={()=>setTab("rutas")}/>}
           {tab==="contactos"&&isAdmin&&<ContactosPanel contacts={contacts} add={add} update={update} del={del} loading={cL} geocodeMissing={geocodeMissing}/>}
           {tab==="resumen"&&isAdmin&&<ResumenPanel rutas={rutas} loading={rL}/>}
