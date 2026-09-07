@@ -28,6 +28,10 @@ const SUPA_URL = "https://dptfgqdybjuhsehyhuyy.supabase.co";
 const SUPA_KEY = "sb_publishable_fBzjJDKMZt4PuJkduBCHqQ_FKctx2J1";
 const db = supabase.createClient(SUPA_URL, SUPA_KEY);
 
+// Limpieza única: las versiones anteriores guardaban la contraseña en texto
+// plano en el teléfono. Esto la borra de los equipos que ya la tenían guardada.
+try{ localStorage.removeItem("criterio_pass"); }catch(e){}
+
 const C = {
   bg:"#0f0f0f",surface:"#1a1a1a",card:"#222222",border:"#2e2e2e",
   accent:"#c9a96e",accentLight:"#e8cfa0",text:"#f0ece4",muted:"#888880",
@@ -113,7 +117,15 @@ const Btn = ({children,onClick,color=C.accent,outline,small,style={},disabled}) 
 const Card = ({children,style={}}) => (
   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20,...style}}>{children}</div>
 );
-const Modal = ({title,onClose,children}) => (
+const Modal = ({title,onClose,children}) => {
+  // Escape cierra la ventana. No se cierra tocando el fondo a propósito: un roce
+  // podría hacerte perder un formulario a medio llenar.
+  useEffect(()=>{
+    const onKey = (e)=>{ if(e.key==="Escape") onClose(); };
+    window.addEventListener("keydown",onKey);
+    return ()=>window.removeEventListener("keydown",onKey);
+  },[onClose]);
+  return (
   <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"flex-start",justifyContent:"center",zIndex:1000,padding:16,paddingTop:24,overflowY:"auto"}}>
     <div className="fade-in" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:28,width:"100%",maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
@@ -123,7 +135,8 @@ const Modal = ({title,onClose,children}) => (
       {children}
     </div>
   </div>
-);
+  );
+};
 const Loading = ({text="Cargando..."}) => (
   <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,padding:60,color:C.muted}}>
     <span className="spin">⟳</span> {text}
@@ -327,6 +340,19 @@ const useRutas = () => {
       }
       aplicar(rutasRef.current.map(r=>r.id===rutaId?{...r,paradas,estadoRuta:"finalizada",horaFin}:r));
     } else {
+      // Si quedan paradas sin resolver y la ruta figuraba como finalizada —el
+      // chofer tocó "Editar" en una parada ya cerrada— la reabrimos. Si no,
+      // desaparecía del panel del admin mientras el chofer seguía viéndola con
+      // trabajo pendiente, y no había forma de reabrirla.
+      const actual = rutasRef.current.find(r=>r.id===rutaId);
+      if(actual && actual.estadoRuta==="finalizada"){
+        const {error:errRe}=await db.from("rutas").update({estadoRuta:"confirmada",horaFin:null}).eq("id",rutaId);
+        if(errRe) reportError("reabrir la ruta", errRe);
+        else {
+          aplicar(rutasRef.current.map(r=>r.id===rutaId?{...r,paradas,estadoRuta:"confirmada",horaFin:null}:r));
+          return true;
+        }
+      }
       aplicar(rutasRef.current.map(r=>r.id===rutaId?{...r,paradas}:r));
     }
     return true;
@@ -392,30 +418,17 @@ const useRutas = () => {
   return {rutas,loading,add,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta};
 };
 
+// Las consultas se guardan pero no se muestran en ninguna pantalla. Antes este
+// hook además las traía de la base y se suscribía al realtime en cada carga,
+// para nadie: eso se sacó y quedó solo el guardado.
 const useConsultas = () => {
-  const [consultas,setConsultas] = useState([]);
-  const [loading,setLoading] = useState(true);
-
-  const fetch_ = async() => {
-    const {data,error}=await db.from("consultas").select("*").order("fecha",{ascending:false}).limit(10);
-    if(error){ reportError("cargar las consultas", error); setLoading(false); return; }
-    setConsultas(data||[]);
-    setLoading(false);
-  };
-  useEffect(()=>{fetch_();},[]);
-  useEffect(()=>{
-    const ch=db.channel("consultas_rt").on("postgres_changes",{event:"*",schema:"public",table:"consultas"},()=>fetch_()).subscribe();
-    return ()=>db.removeChannel(ch);
-  },[]);
-
   const save = async(c) => {
     const n={...c,id:uid()};
     const {error}=await db.from("consultas").insert([n]);
     if(error){ reportError("guardar las respuestas", error); return null; }
-    setConsultas(prev=>[n,...prev]);
     return n;
   };
-  return {consultas,loading,save};
+  return {save};
 };
 
 // ─── BUSCADOR CONTACTOS ───────────────────────────────────────────────────────
@@ -599,7 +612,7 @@ const MapaTalleres = ({talleres,asignaciones,onAsignar}) => {
 };
 
 // ─── PANEL CONSULTA + MAPA ────────────────────────────────────────────────────
-const ConsultaPanel = ({contacts,consultas,saveConsulta,addRuta,onRutasCreadas}) => {
+const ConsultaPanel = ({contacts,saveConsulta,addRuta,onRutasCreadas}) => {
   const talleres = contacts.filter(c=>c.type==="taller");
 
   const [confirmados,setConfirmados] = useState(()=>{
@@ -643,7 +656,7 @@ const ConsultaPanel = ({contacts,consultas,saveConsulta,addRuta,onRutasCreadas})
   };
 
   const guardar = async() => {
-    const c={id:uid(),fecha:today(),hora:timeNow(),respuestas:Object.entries(confirmados).map(([id,v])=>({tallerId:id,tallerName:talleres.find(t=>t.id==id)?.name,...v}))};
+    const c={id:uid(),fecha:today(),hora:timeNow(),respuestas:Object.entries(confirmados).map(([id,v])=>({tallerId:id,tallerName:talleres.find(t=>t.id===id)?.name,...v}))};
     const res = await saveConsulta(c);
     if(!res) return; // falló: el cartel rojo ya lo avisó, no marcamos como guardado
     setSaved(true);
@@ -716,12 +729,20 @@ const ConsultaPanel = ({contacts,consultas,saveConsulta,addRuta,onRutasCreadas})
                 📢 Enviar a todos
               </a>
               <div style={{width:"100%",height:1,background:C.border,margin:"8px 0"}}/>
-              {talleres.map(t=>(
+              {/* Solo los que tienen teléfono: sin él el link quedaba en
+                  "wa.me/54", que no abre ningún chat, pero el botón se veía
+                  igual de verde y parecía funcionar. */}
+              {talleres.filter(t=>t.phone && t.phone.trim()).map(t=>(
                 <a key={t.id} href={`https://wa.me/54${t.phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer"
                   style={{background:"#25D366",color:"#fff",padding:"8px 16px",borderRadius:8,fontSize:13,textDecoration:"none",fontWeight:600}}>
                   📱 {t.name}
                 </a>
               ))}
+              {talleres.some(t=>!t.phone||!t.phone.trim())&&(
+                <p style={{width:"100%",fontSize:12,color:C.muted,marginTop:4}}>
+                  Sin teléfono cargado: {talleres.filter(t=>!t.phone||!t.phone.trim()).map(t=>t.name).join(", ")}. Agregáselo en Contactos y aparecen acá.
+                </p>
+              )}
             </div>
           </Card>
           <Card>
@@ -816,14 +837,22 @@ const ConsultaPanel = ({contacts,consultas,saveConsulta,addRuta,onRutasCreadas})
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 const Login = ({onLogin}) => {
   const [u,setU] = useState(()=>localStorage.getItem("criterio_user")||"");
-  const [p,setP] = useState(()=>localStorage.getItem("criterio_pass")||"");
+  const [p,setP] = useState("");
   const [err,setErr] = useState(""); const [showP,setShowP] = useState(false);
   const [recordar,setRecordar] = useState(()=>!!localStorage.getItem("criterio_user"));
   const handle = () => {
     const user=USERS.find(x=>x.username===u&&x.password===p);
     if(user){
-      if(recordar){localStorage.setItem("criterio_user",u);localStorage.setItem("criterio_pass",p);}
-      else{localStorage.removeItem("criterio_user");localStorage.removeItem("criterio_pass");}
+      // Se guarda SOLO el nombre de usuario, nunca la contraseña. Antes quedaba
+      // en el teléfono en texto plano para siempre, y encima había que apretar
+      // "Ingresar" igual porque la sesión no se restauraba.
+      if(recordar){
+        localStorage.setItem("criterio_user",u);
+        localStorage.setItem("criterio_sesion",u);
+      } else {
+        localStorage.removeItem("criterio_user");
+        localStorage.removeItem("criterio_sesion");
+      }
       onLogin(user);
     } else setErr("Usuario o contraseña incorrectos");
   };
@@ -1129,11 +1158,7 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
 const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta,loading,currentUser,paradaActual}) => {
   const [fecha,setFecha] = useState(today());
   const [modal,setModal] = useState(false);
-  const [camId,setCamId] = useState(1);
-  const [paradas,setParadas] = useState([]);
   const [contactoId,setContactoId] = useState("");
-  const [tipoParada,setTipoParada] = useState("entrega");
-  const [formTaller,setFormTaller] = useState(null);
   const [saving,setSaving] = useState(false);
 
   const [modalExtra,setModalExtra] = useState(null);
@@ -1170,35 +1195,6 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
   };
 
   const rutasHoy = rutas.filter(r=>r.fecha===fecha && r.estadoRuta!=="finalizada");
-  const selContact = contacts.find(x=>x.id===contactoId||x.id===String(contactoId));
-
-  const handleAgregar = ()=>{
-    if(!contactoId||!selContact) return;
-    if(selContact.type==="taller"){setFormTaller({contacto:selContact});}
-    else{setParadas(prev=>[...prev,{id:uid(),contacto:selContact,tipo:tipoParada,estado:"pendiente",retirar:false,entregarBolsa:false,entregarCorte:false,entregarTela:false,prioritario:false,horaPriority:"",prendas:""}]);setContactoId("");}
-  };
-
-  const confirmarTaller = (opc)=>{
-    setParadas(prev=>[...prev,{id:uid(),contacto:formTaller.contacto,tipo:"taller",estado:"pendiente",prendas:"",...opc}]);
-    setFormTaller(null);setContactoId("");
-  };
-
-  const removeParada = (id)=>setParadas(prev=>prev.filter(p=>p.id!==id));
-
-  const paradasOrd = [...paradas].sort((a,b)=>{
-    if(a.prioritario&&!b.prioritario) return -1;
-    if(!a.prioritario&&b.prioritario) return 1;
-    if(a.prioritario&&b.prioritario&&a.horaPriority&&b.horaPriority) return a.horaPriority.localeCompare(b.horaPriority);
-    return 0;
-  });
-
-  const guardarRuta = async()=>{
-    if(!paradas.length) return;
-    setSaving(true);
-    const retorno3={id:uid(),contacto:{id:"ecuador425",type:"empresa",name:"Ecuador 425 — Criterio",address:"Ecuador 425, Buenos Aires, Argentina",phone:"",notes:"Retorno a la empresa",lat:-34.6037,lng:-58.4370},tipo:"retorno",estado:"pendiente",prendas:""};
-    await addRuta({fecha,camionetaId:Number(camId),paradas:[...paradasOrd,retorno3],creada:timeNow()});
-    setSaving(false);setModal(false);setParadas([]);setFormTaller(null);
-  };
 
   // Delega en el hook, que lee la versión más fresca de la ruta y serializa las
   // escrituras (ver enCola en useRutas).
@@ -1531,7 +1527,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
           {/* Header */}
           <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
             <h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:C.accentLight}}>Nueva Ruta</h3>
-            <button onClick={()=>{setModal(false);setParadas([]);setFormTaller(null);setAsignacionesNuevaRuta({});}} style={{background:"none",color:C.muted,fontSize:22,border:"none",cursor:"pointer"}}>✕</button>
+            <button onClick={()=>{setModal(false);setAsignacionesNuevaRuta({});}} style={{background:"none",color:C.muted,fontSize:22,border:"none",cursor:"pointer"}}>✕</button>
           </div>
 
           {/* Cuerpo: en pantalla ancha van mapa | cercanos en dos columnas;
@@ -1590,7 +1586,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
             {/* Búsqueda manual */}
             <div>
               <p style={{fontSize:12,color:C.muted,marginBottom:8}}>¿No encontrás un contacto en el mapa? Buscalo acá:</p>
-              <ContactoBuscador contacts={contacts} value={contactoId} onChange={(id)=>{setContactoId(id);setFormTaller(null);}}/>
+              <ContactoBuscador contacts={contacts} value={contactoId} onChange={(id)=>setContactoId(id)}/>
               {contactoId&&(
                 <div style={{display:"flex",gap:8,marginTop:8}}>
                   {CAMIONETAS.map(cam=>(
@@ -1693,7 +1689,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
             }} style={{flex:1,fontSize:15,padding:"14px"}} disabled={Object.keys(asignacionesNuevaRuta).length===0||saving}>
               {saving?"Creando rutas...":"🚐 Crear rutas"}
             </Btn>
-            <Btn onClick={()=>{setModal(false);setParadas([]);setFormTaller(null);setAsignacionesNuevaRuta({});}} outline style={{padding:"14px 20px"}}>Cancelar</Btn>
+            <Btn onClick={()=>{setModal(false);setAsignacionesNuevaRuta({});}} outline style={{padding:"14px 20px"}}>Cancelar</Btn>
           </div>
         </div>
       ), document.body)}
@@ -1805,15 +1801,23 @@ const ResumenPanel = ({rutas,loading}) => {
             ))}
           </div>
           {CAMIONETAS.map(cam=>{
-            const ruta=rutasDia.find(r=>Number(r.camionetaId)===cam.id);
-            if(!ruta) return null;
-            const completadas=ruta.paradas.filter(p=>p.estado==="completada").length;
-            const prendas=ruta.paradas.reduce((acc,p)=>acc+(Number(p.prendas)||0),0);
-            const pct=ruta.paradas.length?Math.round((completadas/ruta.paradas.length)*100):0;
+            // TODAS las rutas de la camioneta ese día, no solo la primera: es
+            // normal tener dos (una armada desde Talleres y otra desde Nueva
+            // Ruta) y antes los totales de arriba no cerraban con estas cifras.
+            const rutasCam=rutasDia.filter(r=>Number(r.camionetaId)===cam.id);
+            if(rutasCam.length===0) return null;
+            const paradas=rutasCam.flatMap(r=>r.paradas||[]);
+            const completadas=paradas.filter(p=>p.estado==="completada").length;
+            const noEntregadas=paradas.filter(p=>p.estado==="no_entregado").length;
+            const prendas=paradas.reduce((acc,p)=>acc+(Number(p.prendas)||0),0);
+            const pct=paradas.length?Math.round((completadas/paradas.length)*100):0;
             return(
               <Card key={cam.id} style={{marginBottom:12,border:`1px solid ${cam.color}33`}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                  <h3 style={{fontSize:18,color:cam.color}}>{cam.nombre} — {cam.chofer}</h3>
+                  <h3 style={{fontSize:18,color:cam.color}}>
+                    {cam.nombre} — {cam.chofer}
+                    {rutasCam.length>1&&<span style={{fontSize:13,color:C.muted}}> · {rutasCam.length} rutas</span>}
+                  </h3>
                   <span style={{color:C.accent,fontWeight:700}}>{pct}%</span>
                 </div>
                 <div style={{background:C.surface,borderRadius:6,height:6,marginBottom:12}}>
@@ -1821,9 +1825,9 @@ const ResumenPanel = ({rutas,loading}) => {
                 </div>
                 <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
                   <p style={{fontSize:13,color:C.muted}}>📦 {prendas} prendas</p>
-                  <p style={{fontSize:13,color:C.muted}}>✅ {completadas}/{ruta.paradas.length} paradas</p>
-                  {ruta.paradas.filter(p=>p.estado==="no_entregado").length>0&&(
-                    <p style={{fontSize:13,color:C.danger}}>❌ {ruta.paradas.filter(p=>p.estado==="no_entregado").length} no entregadas</p>
+                  <p style={{fontSize:13,color:C.muted}}>✅ {completadas}/{paradas.length} paradas</p>
+                  {noEntregadas>0&&(
+                    <p style={{fontSize:13,color:C.danger}}>❌ {noEntregadas} no entregadas</p>
                   )}
                 </div>
               </Card>
@@ -1950,13 +1954,19 @@ const HistorialPanel = ({rutas,loading,eliminarRuta}) => {
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
 function App(){
-  const [user,setUser] = useState(null);
+  const [user,setUser] = useState(()=>{
+    // Sesión recordada. Se guarda solo el nombre de usuario y se resuelve contra
+    // USERS, así nunca entra un objeto inventado desde el navegador.
+    try{
+      const u = localStorage.getItem("criterio_sesion");
+      return u ? (USERS.find(x=>x.username===u) || null) : null;
+    }catch(e){ return null; }
+  });
   const [tab,setTab] = useState("rutas");
   const {contacts,loading:cL,add,update,del,geocodeMissing} = useContacts();
   const {rutas,loading:rL,add:addRuta,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta} = useRutas();
-  const {consultas,save:saveConsulta} = useConsultas();
+  const {save:saveConsulta} = useConsultas();
 
-  useEffect(()=>{if(user?.role==="chofer") setTab("rutas");},[user]);
   const [alertaParada,setAlertaParada] = useState(null);
   const [toastAdmin,setToastAdmin] = useState(null);
   const [errorApp,setErrorApp] = useState(null);
@@ -2133,7 +2143,10 @@ function App(){
           <h1 style={{fontSize:24,color:C.accent,letterSpacing:2}}>CRITERIO</h1>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <span style={{color:C.muted,fontSize:13}}>Hola, {user.name}</span>
-            <Btn small outline onClick={()=>setUser(null)}>Salir</Btn>
+            <Btn small outline onClick={()=>{
+              try{ localStorage.removeItem("criterio_sesion"); }catch(e){}
+              setUser(null);
+            }}>Salir</Btn>
           </div>
         </div>
         <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"0 20px",display:"flex",gap:4,overflowX:"auto"}}>
@@ -2143,7 +2156,7 @@ function App(){
         </div>
         <div style={{flex:1,padding:"24px 20px",maxWidth:800,margin:"0 auto",width:"100%"}}>
           {tab==="rutas"&&<RutasPanel contacts={contacts} rutas={rutas} addRuta={addRuta} actualizarParada={actualizarParada} agregarParada={agregarParada} quitarParada={quitarParada} confirmarRuta={confirmarRuta} finalizarRuta={finalizarRuta} eliminarRuta={eliminarRuta} loading={rL} currentUser={user} paradaActual={paradaActual}/>}
-          {tab==="consulta"&&isAdmin&&<ConsultaPanel contacts={contacts} consultas={consultas} saveConsulta={saveConsulta} addRuta={addRuta} onRutasCreadas={()=>setTab("rutas")}/>}
+          {tab==="consulta"&&isAdmin&&<ConsultaPanel contacts={contacts} saveConsulta={saveConsulta} addRuta={addRuta} onRutasCreadas={()=>setTab("rutas")}/>}
           {tab==="contactos"&&isAdmin&&<ContactosPanel contacts={contacts} add={add} update={update} del={del} loading={cL} geocodeMissing={geocodeMissing}/>}
           {tab==="resumen"&&isAdmin&&<ResumenPanel rutas={rutas} loading={rL}/>}
           {tab==="historial"&&isAdmin&&<HistorialPanel rutas={rutas} loading={rL} eliminarRuta={eliminarRuta}/>}
