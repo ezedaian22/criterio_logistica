@@ -10,7 +10,9 @@
   <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script type="text/javascript" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="manifest" href="data:application/json,{%22name%22:%22Criterio%20Log%C3%ADstica%22,%22short_name%22:%22Criterio%22,%22start_url%22:%22/%22,%22display%22:%22standalone%22,%22background_color%22:%22%230f0f0f%22,%22theme_color%22:%22%23c9a96e%22}"/>
+  <link rel="manifest" href="/manifest.json"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png"/>
+  <link rel="apple-touch-icon" href="/icon-192.png"/>
   <meta name="theme-color" content="#c9a96e"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -51,40 +53,6 @@ const css = `
   .leaflet-container{border-radius:12px;}
 `;
 
-const CONTACTS_INIT = [
-  {id:"1",type:"taller",name:"Antony",address:"Bartolomé Mitre 2375, Buenos Aires",phone:"1158180268",notes:"",lat:-34.6083,lng:-58.3850},
-  {id:"2",type:"taller",name:"Amalia",address:"Pasaje 27 de Mayo, Bajo Flores, Buenos Aires",phone:"1135736983",notes:"",lat:-34.6422,lng:-58.4347},
-  {id:"3",type:"taller",name:"Alejandra",address:"Ferrer 2155, Pompeya, Buenos Aires",phone:"1155127094",notes:"",lat:-34.6567,lng:-58.4089},
-  {id:"4",type:"taller",name:"Beatriz",address:"Ingeniero Budge 2393, Buenos Aires",phone:"1132192860",notes:"",lat:-34.7267,lng:-58.4089},
-  {id:"5",type:"taller",name:"Ceferina",address:"Larraya 2718, Buenos Aires",phone:"1159205557",notes:"",lat:-34.6456,lng:-58.4789},
-  {id:"6",type:"taller",name:"Pascual",address:"Carlos Tejedor 450, La Tablada, Buenos Aires",phone:"1139091998",notes:"",lat:-34.6789,lng:-58.5234},
-  {id:"7",type:"taller",name:"Leoncio",address:"Bajo Flores, Buenos Aires",phone:"1161002148",notes:"",lat:-34.6389,lng:-58.4456},
-  {id:"8",type:"taller",name:"Miltón",address:"Crisóstomo Álvarez 5955, Villa Lugano, Buenos Aires",phone:"",notes:"",lat:-34.6678,lng:-58.4734},
-  {id:"9",type:"taller",name:"Narvaez",address:"Crisóstomo Álvarez, Buenos Aires",phone:"",notes:"",lat:-34.6690,lng:-58.4720},
-  {id:"10",type:"taller",name:"Eva",address:"Lavalle 2871, Balvanera, Buenos Aires",phone:"1144445290",notes:"",lat:-34.6089,lng:-58.4123},
-  {id:"11",type:"taller",name:"Carmen",address:"Sánchez 3269, José Mármol, Buenos Aires",phone:"1168250358",notes:"",lat:-34.7456,lng:-58.3789},
-  {id:"12",type:"taller",name:"Katy",address:"Boulogne Sur Mer 340, Balvanera, Buenos Aires",phone:"1140613527",notes:"",lat:-34.6123,lng:-58.4056},
-  {id:"13",type:"taller",name:"Marcelo",address:"Terrada 1242, Flores, Buenos Aires",phone:"1167902617",notes:"",lat:-34.6334,lng:-58.4567},
-  {id:"14",type:"taller",name:"Marcos",address:"Pasaje K 661, Villa Soldati, Buenos Aires",phone:"1134199008",notes:"",lat:-34.6712,lng:-58.4389},
-  {id:"15",type:"taller",name:"Porfidia",address:"Larraya 4248, Villa Lugano, Buenos Aires",phone:"1159064211",notes:"",lat:-34.6634,lng:-58.4812},
-  {id:"101",type:"cliente",name:"Balbi",address:"Maquinista Carragal 3861, Munro, Buenos Aires",phone:"",notes:""},
-  {id:"102",type:"cliente",name:"Sucati",address:"Manuel García 360, Buenos Aires",phone:"",notes:""},
-  {id:"103",type:"cliente",name:"G. Reguera",address:"Moreno 1432, Buenos Aires",phone:"",notes:""},
-  {id:"104",type:"cliente",name:"Flores",address:"Campana 563, Buenos Aires",phone:"",notes:""},
-  {id:"105",type:"cliente",name:"Gastón",address:"Emilio Lamarca 492, Buenos Aires",phone:"",notes:""},
-  {id:"106",type:"cliente",name:"Bárbaro's",address:"Rolón 2199, Boulogne, Buenos Aires",phone:"",notes:""},
-  {id:"107",type:"cliente",name:"Utila",address:"Alsina 1551, Buenos Aires",phone:"",notes:""},
-  {id:"108",type:"cliente",name:"Beyaba",address:"Santo Tomé 2436, Buenos Aires",phone:"",notes:""},
-  {id:"109",type:"cliente",name:"285",address:"Corrientes 2385, Buenos Aires",phone:"",notes:""},
-  {id:"110",type:"cliente",name:"Caballito Alado",address:"Valentín Gómez 2728, Buenos Aires",phone:"",notes:""},
-  {id:"111",type:"cliente",name:"Aladino",address:"Gascón 621, Buenos Aires",phone:"",notes:""},
-  {id:"112",type:"cliente",name:"Caballino",address:"Rivadavia 4091, Buenos Aires",phone:"",notes:""},
-  {id:"113",type:"cliente",name:"Mercado Central",address:"De La Tierra 2252, Tapiales, Buenos Aires",phone:"",notes:""},
-  {id:"114",type:"cliente",name:"Peralta",address:"Bulnes 558, Buenos Aires",phone:"",notes:""},
-  {id:"115",type:"cliente",name:"Cajas Pergamino",address:"Pergamino 3751, Buenos Aires",phone:"",notes:""},
-  {id:"17",type:"proveedor",name:"Textil Norte",address:"Av. Avellaneda 3456, Buenos Aires",phone:"",notes:"Telas"},
-  {id:"18",type:"botonera",name:"Arirang",address:"Campana 382, Buenos Aires",phone:"",notes:""},
-];
 
 const USERS = [
   {id:1,username:"Ezequiel",password:"Ecuador425",role:"admin",name:"Ezequiel"},
@@ -96,7 +64,15 @@ const CAMIONETAS = [
   {id:2,nombre:"Kangoo 2",chofer:"Victor",color:"#5c9ce0"},
 ];
 
-const today = () => new Date().toISOString().split("T")[0];
+// Fecha local (Argentina, UTC-3). NO usar toISOString(): devuelve UTC, y a partir
+// de las 21:00 hora local ya salta al día siguiente, con lo que la ruta del día
+// "desaparece" para el chofer y las rutas creadas de noche quedan con fecha de mañana.
+const today = () => {
+  const d = new Date();
+  const mm = String(d.getMonth()+1).padStart(2,"0");
+  const dd = String(d.getDate()).padStart(2,"0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+};
 const timeNow = () => new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
 const uid = () => `${Date.now()}-${Math.random().toString(36).substr(2,9)}`;
 const typeLabel = {taller:"Taller",cliente:"Cliente",proveedor:"Proveedor",botonera:"Botonera"};
@@ -110,6 +86,23 @@ const paradaDesc = (p) => {
   if(p.entregarCorte) parts.push("✂️ Corte");
   if(p.entregarTela) parts.push("🧵 Tela");
   return parts.join(" · ")||"Visita";
+};
+
+// ¿Estamos en una pantalla angosta? El modal de Nueva Ruta tenía el panel de
+// cercanos fijo en 280px al costado del mapa: en un celular de 375px al mapa le
+// quedaban 95px de ancho y los botones de asignar eran intocables.
+const useEsAngosto = (limite=820) => {
+  const [angosto,setAngosto] = useState(()=> typeof window!=="undefined" && window.innerWidth < limite);
+  useEffect(()=>{
+    const onResize = ()=>setAngosto(window.innerWidth < limite);
+    window.addEventListener("resize",onResize);
+    window.addEventListener("orientationchange",onResize);
+    return ()=>{
+      window.removeEventListener("resize",onResize);
+      window.removeEventListener("orientationchange",onResize);
+    };
+  },[limite]);
+  return angosto;
 };
 
 const Btn = ({children,onClick,color=C.accent,outline,small,style={},disabled}) => (
@@ -136,30 +129,15 @@ const Loading = ({text="Cargando..."}) => (
 );
 
 
-// ─── ONESIGNAL NOTIFICATIONS ─────────────────────────────────────────────────
-const OS_APP_ID = "57cb61c0-0bc2-492a-b98e-b70485eae9a4";
-const OS_API_KEY = "os_v2_app_k7fwdqalyjesvomow4cil2xjurpdklt3ziyubgexupj3ps5gzmcgnelz2p6bsdowtyjkmqyb2o4jrrb552bzw2ogh3pbfrmcyc252oq";
-
-const sendNotification = async({titulo, mensaje, filtros}) => {
-  // OneSignal desactivado
-};
-
-// Notificar a Ezequiel (admin) cuando un chofer completa algo
-const notifyAdmin = (chofer, parada, prendas, nota, tipo) => {
-  sendNotification({
-    titulo: tipo === "completada" ? `✅ ${chofer} completó una parada` : `❌ ${chofer} — no se pudo entregar`,
-    mensaje: `${parada}${prendas ? ` · ${prendas} prendas` : ""}${nota ? ` · "${nota}"` : ""}`,
-    filtros: [{field:"tag", key:"role", relation:"=", value:"admin"}]
-  });
-};
-
-// Notificar a un chofer específico (recordatorio)
-const notifyChofer = (camionetaId, parada) => {
-  sendNotification({
-    titulo: "⚠️ Parada sin confirmar",
-    mensaje: `No olvidés anotar lo que pasó en: ${parada}`,
-    filtros: [{field:"tag", key:"camionetaId", relation:"=", value:String(camionetaId)}]
-  });
+// ─── AVISO DE ERRORES ─────────────────────────────────────────────────────────
+// Un solo lugar por donde pasan todas las fallas contra Supabase. App escucha
+// este evento y muestra un cartel rojo. Antes cada llamada ignoraba `error` y
+// la app seguía como si nada: una ruta podía "crearse" en pantalla y no existir.
+const reportError = (donde, error) => {
+  console.error(`[Criterio] ${donde}:`, error);
+  window.dispatchEvent(new CustomEvent("criterio_error",{
+    detail:{donde, mensaje:(error && error.message) ? error.message : "Error desconocido"}
+  }));
 };
 
 // ─── HOOKS SUPABASE ───────────────────────────────────────────────────────────
@@ -168,39 +146,62 @@ const useContacts = () => {
   const [loading,setLoading] = useState(true);
 
   const fetch_ = async () => {
-    const {data} = await db.from("contacts").select("*").order("name");
+    const {data,error} = await db.from("contacts").select("*").order("name");
+    if(error){ reportError("cargar contactos", error); setLoading(false); return; }
     setContacts(data || []);
     setLoading(false);
   };
   useEffect(()=>{fetch_();},[]);
 
+  // Nominatim a veces no responde. Sin el timeout, "Guardar" se quedaba colgado
+  // para siempre y el botón nunca salía de "Guardando...".
   const geocode = async(address) => {
+    if(!address) return {lat:null, lng:null};
+    const ctrl = typeof AbortController!=="undefined" ? new AbortController() : null;
+    const to = ctrl ? setTimeout(()=>ctrl.abort(), 8000) : null;
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address + ", Argentina")}&limit=1`);
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address + ", Argentina")}&limit=1`, ctrl?{signal:ctrl.signal}:undefined);
       const data = await res.json();
       if(data && data.length > 0) return {lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon)};
-    } catch(e) {}
+    } catch(e) {} finally { if(to) clearTimeout(to); }
     return {lat: null, lng: null};
   };
 
   const add = async(c) => {
     const coords = await geocode(c.address);
     const n={...c, id:uid(), lat: coords.lat, lng: coords.lng};
-    const {data}=await db.from("contacts").insert([n]).select();
-    if(data) setContacts(prev=>[...prev,data[0]]);
+    const {data,error}=await db.from("contacts").insert([n]).select();
+    if(error){ reportError("guardar el contacto", error); return false; }
+    if(data && data[0]) setContacts(prev=>[...prev,data[0]]);
+    return true;
   };
   const update = async(c) => {
+    // Si cambió la dirección hay que volver a ubicarlo: antes solo se
+    // geocodificaba cuando faltaban coordenadas, así que corregir una dirección
+    // dejaba el punto en el lugar viejo.
+    const anterior = contacts.find(x=>x.id===c.id);
+    const cambioDireccion = anterior ? (anterior.address||"") !== (c.address||"") : false;
     let updated = {...c};
-    if(!c.lat || !c.lng) {
+    if(cambioDireccion || !c.lat || !c.lng) {
       const coords = await geocode(c.address);
-      updated = {...c, lat: coords.lat, lng: coords.lng};
+      // Si Nominatim no encuentra nada, conservamos las coordenadas que ya tenía
+      // en vez de dejarlo sin ubicación en el mapa.
+      updated = {
+        ...c,
+        lat: (coords.lat !== null && coords.lat !== undefined) ? coords.lat : (c.lat || null),
+        lng: (coords.lng !== null && coords.lng !== undefined) ? coords.lng : (c.lng || null),
+      };
     }
-    await db.from("contacts").update(updated).eq("id",c.id);
+    const {error} = await db.from("contacts").update(updated).eq("id",c.id);
+    if(error){ reportError("actualizar el contacto", error); return false; }
     setContacts(prev=>prev.map(x=>x.id===c.id?updated:x));
+    return true;
   };
   const del = async(id) => {
-    await db.from("contacts").delete().eq("id",id);
+    const {error} = await db.from("contacts").delete().eq("id",id);
+    if(error){ reportError("borrar el contacto", error); return false; }
     setContacts(prev=>prev.filter(x=>x.id!==id));
+    return true;
   };
   // Reintenta ubicar en el mapa a los contactos que tienen direccion pero no coordenadas.
   // Nominatim pide maximo 1 consulta por segundo, por eso la espera entre cada una.
@@ -212,9 +213,14 @@ const useContacts = () => {
       const c = faltantes[i];
       const coords = await geocode(c.address);
       if(coords.lat && coords.lng){
-        await db.from("contacts").update({lat:coords.lat,lng:coords.lng}).eq("id",c.id);
-        setContacts(prev=>prev.map(x=>x.id===c.id?{...x,lat:coords.lat,lng:coords.lng}:x));
-        ok++;
+        const {error} = await db.from("contacts").update({lat:coords.lat,lng:coords.lng}).eq("id",c.id);
+        if(error){
+          reportError("guardar la ubicación de "+c.name, error);
+          fallidos.push(c.name);
+        } else {
+          setContacts(prev=>prev.map(x=>x.id===c.id?{...x,lat:coords.lat,lng:coords.lng}:x));
+          ok++;
+        }
       } else {
         fallidos.push(c.name);
       }
@@ -229,77 +235,127 @@ const useContacts = () => {
 const useRutas = () => {
   const [rutas,setRutas] = useState([]);
   const [loading,setLoading] = useState(true);
+  // Espejo de lo último que mostramos, para comparar cuando llega el realtime.
+  // No se puede usar payload.old: Postgres, salvo que la tabla tenga
+  // REPLICA IDENTITY FULL, solo manda ahí la clave primaria, así que
+  // payload.old.paradas venía siempre vacío y no se disparaba ningún aviso.
+  const rutasRef = useRef([]);
 
-  const fetch_ = async() => {
-    const {data}=await db.from("rutas").select("*").order("fecha",{ascending:false}).limit(60);
-    setRutas(data||[]);
+  const aplicar = (nuevas) => { rutasRef.current = nuevas; setRutas(nuevas); };
+
+  // Compara lo que teníamos con lo que acaba de llegar y avisa por cada parada
+  // que pasó de pendiente a resuelta. Como comparamos contra nuestra propia
+  // copia, el que hizo el cambio no se auto-notifica.
+  const detectarCambios = (viejas, nuevas) => {
+    nuevas.forEach(rn=>{
+      const rv = viejas.find(x=>x.id===rn.id);
+      if(!rv) return;
+      const cam = CAMIONETAS.find(c=>Number(c.id)===Number(rn.camionetaId));
+      (rn.paradas||[]).forEach(np=>{
+        const vp = (rv.paradas||[]).find(x=>x.id===np.id);
+        if(!vp || vp.estado!=="pendiente") return;
+        if(np.estado==="completada"||np.estado==="no_entregado"){
+          window.dispatchEvent(new CustomEvent("criterio_update",{detail:{
+            chofer: cam?cam.chofer:"",
+            parada: np.contacto?.name,
+            prendas: np.prendas,
+            nota: np.nota,
+            tipo: np.estado,
+          }}));
+        }
+      });
+    });
+  };
+
+  const fetch_ = async(conAviso) => {
+    const {data,error}=await db.from("rutas").select("*").order("fecha",{ascending:false}).limit(60);
+    if(error){ reportError("cargar las rutas", error); setLoading(false); return; }
+    const nuevas = data||[];
+    if(conAviso) detectarCambios(rutasRef.current, nuevas);
+    aplicar(nuevas);
     setLoading(false);
   };
-  useEffect(()=>{fetch_();},[]);
+  useEffect(()=>{fetch_(false);},[]);
   useEffect(()=>{
-    const ch=db.channel("rutas_rt").on("postgres_changes",{event:"UPDATE",schema:"public",table:"rutas"},(payload)=>{
-      fetch_();
-      // Notificar al admin cuando un chofer completa o actualiza algo
-      if(payload.new && payload.old){
-        const nuevasParadas = payload.new.paradas || [];
-        const viejasParadas = payload.old.paradas || [];
-        nuevasParadas.forEach(np=>{
-          const vp = viejasParadas.find(x=>x.id===np.id);
-          if(vp && vp.estado==="pendiente" && np.estado==="completada"){
-            const cam = CAMIONETAS.find(c=>c.id===payload.new.camionetaId);
-            if("Notification"in window&&Notification.permission==="granted"){
-              new Notification(`✅ ${cam?.chofer} completó una parada`,{
-                body:`${np.contacto?.name} — ${np.prendas?np.prendas+" prendas":""}${np.nota?` · "${np.nota}"`:""}`,
-                requireInteraction:false,
-              });
-            }
-            // Notificación push via OneSignal al admin
-            notifyAdmin(cam?.chofer, np.contacto?.name, np.prendas, np.nota, "completada");
-            // Evento custom para mostrar toast en pantalla
-            window.dispatchEvent(new CustomEvent("criterio_update",{detail:{chofer:cam?.chofer,parada:np.contacto?.name,prendas:np.prendas,nota:np.nota,tipo:"completada"}}));
-          }
-          if(vp && vp.estado==="pendiente" && np.estado==="no_entregado"){
-            const cam = CAMIONETAS.find(c=>c.id===payload.new.camionetaId);
-            window.dispatchEvent(new CustomEvent("criterio_update",{detail:{chofer:cam?.chofer,parada:np.contacto?.name,tipo:"no_entregado"}}));
-          }
-        });
-      }
+    // event:"*" en vez de solo UPDATE: antes el chofer no veía una ruta recién
+    // creada (INSERT) hasta recargar, y seguía trabajando sobre una ruta
+    // borrada (DELETE) mandando cambios a una fila que ya no existía.
+    const ch=db.channel("rutas_rt").on("postgres_changes",{event:"*",schema:"public",table:"rutas"},()=>{
+      fetch_(true);
     }).subscribe();
     return ()=>db.removeChannel(ch);
   },[]);
 
   const add = async(r) => {
     const n={...r,id:uid(),estadoRuta:"borrador"};
-    await db.from("rutas").insert([n]);
-    setRutas(prev=>[n,...prev]);
+    const {error}=await db.from("rutas").insert([n]);
+    if(error){ reportError("crear la ruta", error); return null; }
+    aplicar([n,...rutasRef.current]);
     return n;
   };
-  const updateParadas = async(rutaId,paradas) => {
-    await db.from("rutas").update({paradas}).eq("id",rutaId);
-    // Si todas las paradas están completadas, finalizar la ruta automáticamente
-    const todasCompletadas = paradas.every(p=>p.estado==="completada"||p.estado==="no_entregado");
+  // Las escrituras de paradas van en fila india. Sin esto, tocar "Completado"
+  // justo después de escribir una nota disparaba dos escrituras casi a la vez
+  // (el blur del campo y el click del botón) y la segunda, armada con la copia
+  // vieja de las paradas, pisaba la nota recién guardada.
+  const colaRef = useRef(Promise.resolve());
+  const enCola = (fn) => {
+    const p = colaRef.current.then(fn, fn);
+    colaRef.current = p.then(()=>{}, ()=>{});
+    return p;
+  };
+
+  const escribirParadas = async(rutaId,paradas) => {
+    const {error}=await db.from("rutas").update({paradas}).eq("id",rutaId);
+    if(error){ reportError("guardar los cambios de la ruta", error); return false; }
+    // Ojo con el length: [].every(...) devuelve true en JavaScript, así que
+    // borrar todas las paradas dejaba la ruta "finalizada" y vacía.
+    const todasCompletadas = paradas.length>0 && paradas.every(p=>p.estado==="completada"||p.estado==="no_entregado");
     if(todasCompletadas){
       const horaFin = timeNow();
-      await db.from("rutas").update({estadoRuta:"finalizada",horaFin}).eq("id",rutaId);
-      setRutas(prev=>prev.map(r=>r.id===rutaId?{...r,paradas,estadoRuta:"finalizada",horaFin}:r));
+      const {error:errFin}=await db.from("rutas").update({estadoRuta:"finalizada",horaFin}).eq("id",rutaId);
+      if(errFin){
+        reportError("finalizar la ruta", errFin);
+        aplicar(rutasRef.current.map(r=>r.id===rutaId?{...r,paradas}:r));
+        return false;
+      }
+      aplicar(rutasRef.current.map(r=>r.id===rutaId?{...r,paradas,estadoRuta:"finalizada",horaFin}:r));
     } else {
-      setRutas(prev=>prev.map(r=>r.id===rutaId?{...r,paradas}:r));
+      aplicar(rutasRef.current.map(r=>r.id===rutaId?{...r,paradas}:r));
     }
+    return true;
   };
+
+  const updateParadas = (rutaId,paradas) => enCola(()=>escribirParadas(rutaId,paradas));
+
+  // Cambia UNA parada leyendo siempre la versión más fresca que tenemos, en vez
+  // de trabajar sobre la copia que había cuando se dibujó la pantalla.
+  const actualizarParada = (rutaId,paradaId,updates) => enCola(async()=>{
+    const ruta = rutasRef.current.find(r=>r.id===rutaId);
+    if(!ruta){ reportError("guardar los cambios de la ruta", {message:"La ruta ya no existe."}); return false; }
+    const nuevas = (ruta.paradas||[]).map(p=>p.id===paradaId?{...p,...updates}:p);
+    return escribirParadas(rutaId,nuevas);
+  });
+
   const confirmarRuta = async(rutaId) => {
-    await db.from("rutas").update({estadoRuta:"confirmada"}).eq("id",rutaId);
-    setRutas(prev=>prev.map(r=>r.id===rutaId?{...r,estadoRuta:"confirmada"}:r));
+    const {error}=await db.from("rutas").update({estadoRuta:"confirmada"}).eq("id",rutaId);
+    if(error){ reportError("confirmar la ruta", error); return false; }
+    aplicar(rutasRef.current.map(r=>r.id===rutaId?{...r,estadoRuta:"confirmada"}:r));
+    return true;
   };
   const finalizarRuta = async(rutaId) => {
     const horaFin = timeNow();
-    await db.from("rutas").update({estadoRuta:"finalizada",horaFin}).eq("id",rutaId);
-    setRutas(prev=>prev.map(r=>r.id===rutaId?{...r,estadoRuta:"finalizada",horaFin}:r));
+    const {error}=await db.from("rutas").update({estadoRuta:"finalizada",horaFin}).eq("id",rutaId);
+    if(error){ reportError("finalizar la ruta", error); return false; }
+    aplicar(rutasRef.current.map(r=>r.id===rutaId?{...r,estadoRuta:"finalizada",horaFin}:r));
+    return true;
   };
   const eliminarRuta = async(rutaId) => {
-    await db.from("rutas").delete().eq("id",rutaId);
-    setRutas(prev=>prev.filter(r=>r.id!==rutaId));
+    const {error}=await db.from("rutas").delete().eq("id",rutaId);
+    if(error){ reportError("eliminar la ruta", error); return false; }
+    aplicar(rutasRef.current.filter(r=>r.id!==rutaId));
+    return true;
   };
-  return {rutas,loading,add,updateParadas,confirmarRuta,finalizarRuta,eliminarRuta};
+  return {rutas,loading,add,updateParadas,actualizarParada,confirmarRuta,finalizarRuta,eliminarRuta};
 };
 
 const useConsultas = () => {
@@ -307,7 +363,8 @@ const useConsultas = () => {
   const [loading,setLoading] = useState(true);
 
   const fetch_ = async() => {
-    const {data}=await db.from("consultas").select("*").order("fecha",{ascending:false}).limit(10);
+    const {data,error}=await db.from("consultas").select("*").order("fecha",{ascending:false}).limit(10);
+    if(error){ reportError("cargar las consultas", error); setLoading(false); return; }
     setConsultas(data||[]);
     setLoading(false);
   };
@@ -319,7 +376,8 @@ const useConsultas = () => {
 
   const save = async(c) => {
     const n={...c,id:uid()};
-    await db.from("consultas").insert([n]);
+    const {error}=await db.from("consultas").insert([n]);
+    if(error){ reportError("guardar las respuestas", error); return null; }
     setConsultas(prev=>[n,...prev]);
     return n;
   };
@@ -392,6 +450,33 @@ const FormTaller = ({contacto,onConfirm,onCancel}) => {
         <Btn small outline onClick={onCancel}>Cancelar</Btn>
       </div>
     </div>
+  );
+};
+
+// ─── CAMPO DE PARADA ──────────────────────────────────────────────────────────
+// Guarda al salir del campo, no en cada tecla. Antes cada pulsación disparaba un
+// UPDATE a Supabase, que disparaba el realtime, que recargaba las 60 rutas y
+// re-renderizaba la pantalla: con señal mala el dato viejo que volvía del
+// servidor pisaba lo que el chofer estaba escribiendo.
+// Tocar cualquier botón dispara el blur primero, así que lo escrito se guarda
+// igual al marcar la parada como completada.
+const CampoParada = ({valor,onGuardar,...props}) => {
+  const [txt,setTxt] = useState(valor||"");
+  const editando = useRef(false);
+
+  // Si el valor cambia desde afuera (otro dispositivo, un refetch) y el chofer
+  // no está escribiendo en este campo, nos ponemos al día.
+  useEffect(()=>{ if(!editando.current) setTxt(valor||""); },[valor]);
+
+  const commit = ()=>{
+    editando.current = false;
+    if((valor||"") !== txt) onGuardar(txt);
+  };
+  return (
+    <input {...props} value={txt}
+      onChange={e=>{editando.current=true;setTxt(e.target.value);}}
+      onBlur={commit}
+      onKeyDown={e=>{if(e.key==="Enter") e.target.blur();}}/>
   );
 };
 
@@ -525,13 +610,15 @@ const ConsultaPanel = ({contacts,consultas,saveConsulta,addRuta,onRutasCreadas})
 
   const guardar = async() => {
     const c={id:uid(),fecha:today(),hora:timeNow(),respuestas:Object.entries(confirmados).map(([id,v])=>({tallerId:id,tallerName:talleres.find(t=>t.id==id)?.name,...v}))};
-    await saveConsulta(c);
+    const res = await saveConsulta(c);
+    if(!res) return; // falló: el cartel rojo ya lo avisó, no marcamos como guardado
     setSaved(true);
     if(talleresConf.length>0) setVista("mapa");
   };
 
   const crearRutas = async() => {
     setCreando(true);
+    let hubo = 0, fallo = false;
     for(const cam of CAMIONETAS){
       const talleresAsig = talleresConf.filter(t=>asignaciones[t.id]===cam.id);
       if(talleresAsig.length===0) continue;
@@ -540,11 +627,26 @@ const ConsultaPanel = ({contacts,consultas,saveConsulta,addRuta,onRutasCreadas})
         retirar:true,entregarBolsa:false,entregarCorte:false,entregarTela:false,
         prioritario:false,horaPriority:"",prendas:""
       }));
-      await addRuta({fecha:today(),camionetaId:cam.id,paradas,creada:timeNow()});
+      // Igual que en los otros dos flujos: la ruta termina volviendo a la
+      // empresa. Sin esta parada el chofer no tenía el botón de cierre y la
+      // ruta nunca se finalizaba sola.
+      const retorno1={id:uid(),contacto:{id:"ecuador425",type:"empresa",name:"Ecuador 425 — Criterio",address:"Ecuador 425, Buenos Aires, Argentina",phone:"",notes:"Retorno a la empresa",lat:-34.6037,lng:-58.4370},tipo:"retorno",estado:"pendiente",prendas:""};
+      const res = await addRuta({fecha:today(),camionetaId:cam.id,paradas:[...paradas,retorno1],creada:timeNow()});
+      if(res){
+        hubo++;
+        // Sacamos de la selección lo que ya quedó creado: si la ruta de la otra
+        // camioneta falla y el admin vuelve a apretar, esta no se duplica.
+        setAsignaciones(prev=>{
+          const n={...prev};
+          talleresAsig.forEach(t=>{ delete n[t.id]; });
+          return n;
+        });
+      } else fallo = true;
     }
     setCreando(false);
-    limpiar();
-    onRutasCreadas();
+    // Si algo falló no borramos las respuestas cargadas: se perderían.
+    if(fallo) return;
+    if(hubo>0){ limpiar(); onRutasCreadas(); }
   };
 
   const asigTodos = (camId) => {
@@ -738,8 +840,11 @@ const ContactosPanel = ({contacts,add,update,del,loading,geocodeMissing}) => {
   const save_ = async()=>{
     if(!form.name||!form.address) return;
     setSaving(true);
-    if(modal==="new") await add(form); else await update(form);
-    setSaving(false); setModal(null);
+    const ok = modal==="new" ? await add(form) : await update(form);
+    setSaving(false);
+    // Si falló, dejamos el modal abierto con lo que escribió: cerrarlo daría a
+    // entender que se guardó y perdería los datos.
+    if(ok) setModal(null);
   };
   if(loading) return <Loading text="Cargando contactos..."/>;
   return (
@@ -822,7 +927,9 @@ const ContactosPanel = ({contacts,add,update,del,loading,geocodeMissing}) => {
             </div>
             <div style={{display:"flex",gap:8,flexShrink:0}}>
               <Btn small outline onClick={()=>openEdit(c)}>Editar</Btn>
-              <Btn small onClick={()=>del(c.id)} color={C.danger}>✕</Btn>
+              <Btn small onClick={()=>{
+                if(window.confirm(`¿Borrar a ${c.name}? No se puede deshacer.`)) del(c.id);
+              }} color={C.danger}>✕</Btn>
             </div>
           </Card>
         ))}
@@ -982,7 +1089,7 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
   );
 };
 
-const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finalizarRuta,eliminarRuta,loading,currentUser,paradaActual}) => {
+const RutasPanel = ({contacts,rutas,addRuta,updateParadas,actualizarParada,confirmarRuta,finalizarRuta,eliminarRuta,loading,currentUser,paradaActual}) => {
   const [fecha,setFecha] = useState(today());
   const [modal,setModal] = useState(false);
   const [camId,setCamId] = useState(1);
@@ -1001,6 +1108,7 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
   const [contactoExtra,setContactoExtra] = useState("");
   const [tipoExtra,setTipoExtra] = useState("entrega");
   const [formTallerExtra,setFormTallerExtra] = useState(null);
+  const angosto = useEsAngosto(); // en celular el modal de Nueva Ruta se apila en vez de ir en dos columnas
 
   const selContactExtra = contacts.find(x=>x.id===contactoExtra||x.id===String(contactoExtra));
 
@@ -1055,12 +1163,9 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
     setSaving(false);setModal(false);setParadas([]);setFormTaller(null);
   };
 
-  const updateParada = async(rutaId,paradaId,updates)=>{
-    const ruta=rutas.find(r=>r.id===rutaId);
-    if(!ruta) return;
-    const nuevas=ruta.paradas.map(p=>p.id===paradaId?{...p,...updates}:p);
-    await updateParadas(rutaId,nuevas);
-  };
+  // Delega en el hook, que lee la versión más fresca de la ruta y serializa las
+  // escrituras (ver enCola en useRutas).
+  const updateParada = (rutaId,paradaId,updates)=>actualizarParada(rutaId,paradaId,updates);
 
   const EMPRESA = encodeURIComponent("Ecuador 425, Buenos Aires, Argentina");
   const mapsUrl = (ps, soloPendientes=false)=>{
@@ -1098,11 +1203,16 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
     const rutaActiva = rutasDelDia.find(r=>r.estadoRuta!=="finalizada");
     const ruta = rutaActiva || [...rutasDelDia].sort((a,b)=>(b.creada||"").localeCompare(a.creada||""))[0];
 
-    // Registrar hora de inicio cuando el chofer abre la ruta por primera vez
+    // Registrar hora de inicio cuando el chofer abre la ruta por primera vez.
+    // Se sacó el updateParadas() que había acá: reescribía las paradas sin
+    // cambiarlas solo para "disparar" el update, y ahora que una ruta con todas
+    // las paradas resueltas se autofinaliza, esa escritura de más podía volver a
+    // finalizar una ruta que el chofer acababa de reabrir. El update de abajo ya
+    // dispara el realtime por sí solo.
     useEffect(()=>{
       if(ruta&&!ruta.horaInicio){
-        updateParadas(ruta.id, ruta.paradas); // trigger update con horaInicio
-        db.from("rutas").update({horaInicio:timeNow()}).eq("id",ruta.id);
+        db.from("rutas").update({horaInicio:timeNow()}).eq("id",ruta.id)
+          .then(({error})=>{ if(error) reportError("registrar la hora de inicio", error); });
       }
     },[ruta?.id]);
 
@@ -1194,17 +1304,20 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
                     {esTaller&&p.retirar&&(
                       <div style={{marginBottom:12}}>
                         <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:6}}>Prendas retiradas</label>
-                        <input type="number" placeholder="Cantidad" style={{width:160}} value={p.prendas||""} onChange={e=>updateParada(ruta.id,p.id,{prendas:e.target.value})}/>
+                        <CampoParada type="number" placeholder="Cantidad" style={{width:160}}
+                          valor={p.prendas} onGuardar={v=>updateParada(ruta.id,p.id,{prendas:v})}/>
                       </div>
                     )}
                     <div style={{marginBottom:10}}>
                       <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:6}}>Nota (opcional)</label>
-                      <input placeholder="Ej: tiene más para la semana que viene..." value={p.nota||""} onChange={e=>updateParada(ruta.id,p.id,{nota:e.target.value})} style={{fontSize:13}}/>
+                      <CampoParada placeholder="Ej: tiene más para la semana que viene..." style={{fontSize:13}}
+                        valor={p.nota} onGuardar={v=>updateParada(ruta.id,p.id,{nota:v})}/>
                     </div>
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       <Btn small color={p.tipo==="retorno"?C.accent:C.success} onClick={async()=>{
-                        const nuevasParadas = ruta.paradas.map(x=>x.id===p.id?{...x,estado:"completada",horaLlegada:timeNow()}:x);
-                        await updateParadas(ruta.id,nuevasParadas);
+                        // Pasa por actualizarParada para no pisar la nota o las
+                        // prendas que se acaban de guardar al salir del campo.
+                        await actualizarParada(ruta.id,p.id,{estado:"completada",horaLlegada:timeNow()});
                         if(p.tipo==="retorno"){
                           await finalizarRuta(ruta.id);
                         }
@@ -1384,10 +1497,15 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
             <button onClick={()=>{setModal(false);setParadas([]);setFormTaller(null);setAsignacionesNuevaRuta({});}} style={{background:"none",color:C.muted,fontSize:22,border:"none",cursor:"pointer"}}>✕</button>
           </div>
 
-          {/* Cuerpo: mapa + lateral cercanos */}
-          <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+          {/* Cuerpo: en pantalla ancha van mapa | cercanos en dos columnas;
+              en celular se apilan y scrollea todo el cuerpo junto. */}
+          <div style={angosto
+            ? {flex:1,display:"flex",flexDirection:"column",overflowY:"auto",WebkitOverflowScrolling:"touch"}
+            : {flex:1,display:"flex",overflow:"hidden"}}>
             {/* Columna central — mapa + asignados + buscador */}
-            <div style={{flex:1,minWidth:0,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+            <div style={angosto
+              ? {display:"flex",flexDirection:"column",flexShrink:0}
+              : {flex:1,minWidth:0,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
               <div style={{flexShrink:0,padding:"10px 16px 0"}}>
                 <MapaNuevaRuta
                   contacts={contacts.filter(c=>c.lat&&c.lng)}
@@ -1398,7 +1516,9 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
                   })}
                 />
               </div>
-              <div style={{flex:1,minHeight:180,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
+              <div style={angosto
+                ? {padding:"12px 16px"}
+                : {flex:1,minHeight:180,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
             {/* Lista de asignados */}
             {Object.keys(asignacionesNuevaRuta).length>0&&(
               <div style={{marginBottom:16,background:C.surface,borderRadius:12,padding:12,border:`1px solid ${C.border}`}}>
@@ -1469,11 +1589,15 @@ const RutasPanel = ({contacts,rutas,addRuta,updateParadas,confirmarRuta,finaliza
                 return {parada:c,estado:cerca.length?"ok":"vacio",cercanos:cerca};
               });
               return(
-                <div style={{width:280,flexShrink:0,borderLeft:`1px solid ${C.border}`,background:"#0a0a0a",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+                <div style={angosto
+                  ? {width:"100%",flexShrink:0,borderTop:`1px solid ${C.border}`,background:"#0a0a0a"}
+                  : {width:280,flexShrink:0,borderLeft:`1px solid ${C.border}`,background:"#0a0a0a",display:"flex",flexDirection:"column",overflow:"hidden"}}>
                   <div style={{padding:"10px 12px",borderBottom:`1px solid #00E5FF33`,flexShrink:0}}>
                     <p style={{fontSize:11,color:"#00E5FF",fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📍 Cercanos &lt;5 km</p>
                   </div>
-                  <div style={{flex:1,minHeight:0,overflowY:"auto",padding:"10px 12px"}}>
+                  <div style={angosto
+                    ? {padding:"10px 12px"}
+                    : {flex:1,minHeight:0,overflowY:"auto",padding:"10px 12px"}}>
                     {filas.length===0
                       ? <p style={{fontSize:13,color:C.muted,textAlign:"center",marginTop:30,lineHeight:1.5}}>Asigná una parada para ver talleres cercanos</p>
                       : filas.map(({parada,estado,cercanos})=>(
@@ -1794,40 +1918,59 @@ function App(){
   const [user,setUser] = useState(null);
   const [tab,setTab] = useState("rutas");
   const {contacts,loading:cL,add,update,del,geocodeMissing} = useContacts();
-  const {rutas,loading:rL,add:addRuta,updateParadas,confirmarRuta,finalizarRuta,eliminarRuta} = useRutas();
+  const {rutas,loading:rL,add:addRuta,updateParadas,actualizarParada,confirmarRuta,finalizarRuta,eliminarRuta} = useRutas();
   const {consultas,save:saveConsulta} = useConsultas();
 
   useEffect(()=>{if(user?.role==="chofer") setTab("rutas");},[user]);
   const [alertaParada,setAlertaParada] = useState(null);
   const [toastAdmin,setToastAdmin] = useState(null);
+  const [errorApp,setErrorApp] = useState(null);
+  const toastTimer = useRef(null);
+  const errorTimer = useRef(null);
 
-  // Escuchar actualizaciones de choferes (solo admin)
+  // Escuchar actualizaciones de choferes (solo admin). El aviso del sistema se
+  // arma acá y no dentro del hook para que el chofer no se auto-notifique.
   useEffect(()=>{
     if(!user||user.role!=="admin") return;
     const handler = (e)=>{
       const {chofer,parada,prendas,nota,tipo} = e.detail;
+      if("Notification"in window && Notification.permission==="granted"){
+        new Notification(
+          tipo==="completada" ? `✅ ${chofer} completó una parada` : `❌ ${chofer} — no se pudo entregar`,
+          {
+            body:`${parada||""}${prendas?` — ${prendas} prendas`:""}${nota?` · "${nota}"`:""}`,
+            requireInteraction:false,
+            tag:"criterio-"+(parada||""),
+          }
+        );
+      }
       setToastAdmin({chofer,parada,prendas,nota,tipo,ts:Date.now()});
-      setTimeout(()=>setToastAdmin(null),6000);
+      if(toastTimer.current) clearTimeout(toastTimer.current);
+      toastTimer.current = setTimeout(()=>setToastAdmin(null),6000);
     };
     window.addEventListener("criterio_update",handler);
     return ()=>window.removeEventListener("criterio_update",handler);
   },[user]);
 
+  // Cartel rojo cuando algo falla contra Supabase. Antes los errores se
+  // tragaban y la app seguía como si el dato se hubiera guardado.
+  useEffect(()=>{
+    const handler = (e)=>{
+      setErrorApp({donde:e.detail.donde, mensaje:e.detail.mensaje, ts:Date.now()});
+      if(errorTimer.current) clearTimeout(errorTimer.current);
+      errorTimer.current = setTimeout(()=>setErrorApp(null),9000);
+    };
+    window.addEventListener("criterio_error",handler);
+    return ()=>{
+      window.removeEventListener("criterio_error",handler);
+      if(errorTimer.current) clearTimeout(errorTimer.current);
+      if(toastTimer.current) clearTimeout(toastTimer.current);
+    };
+  },[]);
+
   useEffect(()=>{
     if("Notification"in window&&user){
       Notification.requestPermission();
-    }
-    if(false) { // OneSignal desactivado
-      (async function(OneSignal) {
-        // Pedir permiso de notificaciones
-        await OneSignal.Notifications.requestPermission();
-        // Taggear al usuario para poder enviarle notificaciones por rol
-        await OneSignal.User.addTags({
-          role: user.role,
-          username: user.username,
-          camionetaId: String(user.camionetaId || ""),
-        });
-      });
     }
   },[user]);
 
@@ -1845,8 +1988,6 @@ function App(){
           body:`Próxima parada: ${pend[0].contacto.name}. No olvidés anotar lo que pasó.`,
           requireInteraction:true,
         });
-        // Push via OneSignal al chofer
-        notifyChofer(userData.camionetaId, pend[0].contacto.name);
       }
       setAlertaParada({nombre:pend[0].contacto.name,cantidad:pend.length});
       setParadaActual(pend[0]);
@@ -1874,7 +2015,25 @@ function App(){
     return ()=>document.removeEventListener("visibilitychange",handleVisibility);
   },[rutas,user,checkParadas]);
 
-  if(!user) return (<><style>{css}</style><Login onLogin={setUser}/></>);
+  // Cartel de error: lo ven todos, chofer incluido, y también en el login
+  // (los datos se empiezan a cargar antes de que alguien ingrese).
+  const ErrorApp = errorApp ? (
+    <div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",zIndex:10000,background:C.danger,padding:"12px 20px",borderRadius:12,boxShadow:"0 4px 20px rgba(0,0,0,.5)",minWidth:280,maxWidth:"92vw"}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+        <span style={{fontSize:20,lineHeight:1.2}}>⚠️</span>
+        <div style={{flex:1}}>
+          <p style={{fontWeight:700,fontSize:14,color:"#fff"}}>No se pudo {errorApp.donde}</p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,.85)",lineHeight:1.4}}>
+            Revisá la conexión y probá de nuevo. Si sigue igual, avisale a Ezequiel.
+          </p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,.6)",marginTop:4,wordBreak:"break-word"}}>{errorApp.mensaje}</p>
+        </div>
+        <button onClick={()=>setErrorApp(null)} style={{background:"none",border:"none",color:"rgba(255,255,255,.7)",fontSize:18,cursor:"pointer"}}>✕</button>
+      </div>
+    </div>
+  ) : null;
+
+  if(!user) return (<><style>{css}</style><Login onLogin={setUser}/>{ErrorApp}</>);
 
   // Toast para admin cuando chofer completa algo
   const ToastAdmin = toastAdmin ? (
@@ -1928,6 +2087,7 @@ function App(){
       <style>{css}</style>
       {AlertaFlotante}
       {ToastAdmin}
+      {ErrorApp}
       <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",paddingTop:alertaParada?"60px":"0"}}>
         <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:100}}>
           <h1 style={{fontSize:24,color:C.accent,letterSpacing:2}}>CRITERIO</h1>
@@ -1942,7 +2102,7 @@ function App(){
           ))}
         </div>
         <div style={{flex:1,padding:"24px 20px",maxWidth:800,margin:"0 auto",width:"100%"}}>
-          {tab==="rutas"&&<RutasPanel contacts={contacts} rutas={rutas} addRuta={addRuta} updateParadas={updateParadas} confirmarRuta={confirmarRuta} finalizarRuta={finalizarRuta} eliminarRuta={eliminarRuta} loading={rL} currentUser={user} paradaActual={paradaActual}/>}
+          {tab==="rutas"&&<RutasPanel contacts={contacts} rutas={rutas} addRuta={addRuta} updateParadas={updateParadas} actualizarParada={actualizarParada} confirmarRuta={confirmarRuta} finalizarRuta={finalizarRuta} eliminarRuta={eliminarRuta} loading={rL} currentUser={user} paradaActual={paradaActual}/>}
           {tab==="consulta"&&isAdmin&&<ConsultaPanel contacts={contacts} consultas={consultas} saveConsulta={saveConsulta} addRuta={addRuta} onRutasCreadas={()=>setTab("rutas")}/>}
           {tab==="contactos"&&isAdmin&&<ContactosPanel contacts={contacts} add={add} update={update} del={del} loading={cL} geocodeMissing={geocodeMissing}/>}
           {tab==="resumen"&&isAdmin&&<ResumenPanel rutas={rutas} loading={rL}/>}
@@ -1958,6 +2118,17 @@ function App(){
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<App/>);
+  </script>
+  <script type="text/javascript">
+    // Registro del service worker: fuera del bloque de Babel a propósito, para
+    // que se registre aunque la compilación del JSX falle.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("/sw.js").catch(function (e) {
+          console.warn("[Criterio] service worker no registrado:", e);
+        });
+      });
+    }
   </script>
 </body>
 </html>
