@@ -75,8 +75,10 @@ const today = () => {
 };
 const timeNow = () => new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
 const uid = () => `${Date.now()}-${Math.random().toString(36).substr(2,9)}`;
-const typeLabel = {taller:"Taller",cliente:"Cliente",proveedor:"Proveedor",botonera:"Botonera"};
-const typeColor = {taller:C.accent,cliente:C.info,proveedor:C.success,botonera:C.warning};
+// "empresa" es el tipo de la parada de retorno a Ecuador 425. Sin él, esa parada
+// mostraba una etiqueta vacía y con un color inválido.
+const typeLabel = {taller:"Taller",cliente:"Cliente",proveedor:"Proveedor",botonera:"Botonera",empresa:"Empresa"};
+const typeColor = {taller:C.accent,cliente:C.info,proveedor:C.success,botonera:C.warning,empresa:C.accentLight};
 const paradaDesc = (p) => {
   if(p.tipo==="retorno") return "🏠 Retorno";
   if(p.tipo!=="taller") return p.tipo==="entrega"?"🚚 Entrega":p.tipo==="compra"?"🛒 Compra":"📌 Visita";
@@ -537,7 +539,7 @@ const MapaTalleres = ({talleres,asignaciones,onAsignar}) => {
 
       // Punto más grande para facilitar el toque en celular
       const icon = L.divIcon({
-        html:`<div style="background:${color};width:26px;height:26px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${cam?"#000":"#fff"}">${cam?cam.chofer[0]:t.name[0].toUpperCase()}</div>`,
+        html:`<div style="background:${color};width:26px;height:26px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${cam?"#000":"#fff"}">${cam?cam.chofer[0]:(t.name||"?")[0].toUpperCase()}</div>`,
         iconSize:[22,22],iconAnchor:[11,11],className:""
       });
 
@@ -687,7 +689,10 @@ const ConsultaPanel = ({contacts,consultas,saveConsulta,addRuta,onRutasCreadas})
     setAsignaciones(nuevas);
   };
 
-  const asigSin = Object.keys(asignaciones).length;
+  // Talleres CONFIRMADOS que tienen camioneta asignada. Antes se contaban las
+  // claves de `asignaciones`, que podían incluir talleres que después pasaste a
+  // ❌: el botón "Crear rutas" se habilitaba aunque no hubiera nada que crear.
+  const asignadosConf = talleresConf.filter(t=>asignaciones[t.id]).length;
 
   return (
     <div className="fade-in">
@@ -797,7 +802,7 @@ const ConsultaPanel = ({contacts,consultas,saveConsulta,addRuta,onRutasCreadas})
                 })}
               </div>
 
-              <Btn onClick={crearRutas} disabled={creando||asigSin===0} style={{width:"100%",fontSize:16,padding:"14px"}}>
+              <Btn onClick={crearRutas} disabled={creando||asignadosConf===0} style={{width:"100%",fontSize:16,padding:"14px"}}>
                 {creando?"Creando rutas...":"🚐 Crear rutas para hoy"}
               </Btn>
             </>
@@ -1957,6 +1962,7 @@ function App(){
   const [errorApp,setErrorApp] = useState(null);
   const toastTimer = useRef(null);
   const errorTimer = useRef(null);
+  const alertaTimer = useRef(null);
 
   // Escuchar actualizaciones de choferes (solo admin). El aviso del sistema se
   // arma acá y no dentro del hook para que el chofer no se auto-notifique.
@@ -1995,6 +2001,7 @@ function App(){
       window.removeEventListener("criterio_error",handler);
       if(errorTimer.current) clearTimeout(errorTimer.current);
       if(toastTimer.current) clearTimeout(toastTimer.current);
+      if(alertaTimer.current) clearTimeout(alertaTimer.current);
     };
   },[]);
 
@@ -2021,7 +2028,10 @@ function App(){
       }
       setAlertaParada({nombre:pend[0].contacto.name,cantidad:pend.length});
       setParadaActual(pend[0]);
-      setTimeout(()=>setAlertaParada(null),10000);
+      // Cancelamos el temporizador anterior: si llegaban dos alertas seguidas,
+      // el de la primera cerraba la segunda antes de tiempo.
+      if(alertaTimer.current) clearTimeout(alertaTimer.current);
+      alertaTimer.current = setTimeout(()=>setAlertaParada(null),10000);
     }
   },[]);
 
