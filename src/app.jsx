@@ -419,7 +419,10 @@ const useRutas = () => {
     return p;
   };
 
-  const escribirParadas = async(rutaId,paradas) => {
+  // estadoActual: el estado que la ruta tiene EN LA BASE, recién leído. Si no se
+  // pasa se cae a la copia local, que puede estar vieja si otro dispositivo
+  // finalizó la ruta mientras tanto.
+  const escribirParadas = async(rutaId,paradas,estadoActual) => {
     const {error}=await db.from("rutas").update({paradas}).eq("id",rutaId);
     if(error){ reportError("guardar los cambios de la ruta", error); return false; }
     // Ojo con el length: [].every(...) devuelve true en JavaScript, así que
@@ -439,8 +442,9 @@ const useRutas = () => {
       // chofer tocó "Editar" en una parada ya cerrada— la reabrimos. Si no,
       // desaparecía del panel del admin mientras el chofer seguía viéndola con
       // trabajo pendiente, y no había forma de reabrirla.
-      const actual = rutasRef.current.find(r=>r.id===rutaId);
-      if(actual && actual.estadoRuta==="finalizada"){
+      const local = rutasRef.current.find(r=>r.id===rutaId);
+      const estado = estadoActual !== undefined ? estadoActual : (local && local.estadoRuta);
+      if(estado==="finalizada"){
         const {error:errRe}=await db.from("rutas").update({estadoRuta:"confirmada",horaFin:null}).eq("id",rutaId);
         if(errRe) reportError("reabrir la ruta", errRe);
         else {
@@ -457,29 +461,34 @@ const useRutas = () => {
   // aparatos se pisen: si el admin agregó una parada hace un segundo desde la
   // compu, el chofer la toma en cuenta en vez de mandar su copia vieja y
   // borrarla. La ventana de choque baja de minutos a un viaje de ida y vuelta.
-  const leerParadas = async(rutaId) => {
-    const {data,error} = await db.from("rutas").select("paradas,borrado").eq("id",rutaId).maybeSingle();
+  // Devuelve las paradas Y el estado de la ruta, los dos recién leídos: si otro
+  // dispositivo la finalizó mientras tanto, hay que enterarse acá y no confiar
+  // en la copia local.
+  const leerRuta = async(rutaId) => {
+    const {data,error} = await db.from("rutas").select("paradas,borrado,estadoRuta").eq("id",rutaId).maybeSingle();
     if(error){ reportError("leer la ruta antes de guardar", error); return null; }
     if(!data){ reportError("guardar los cambios", {message:"Esa ruta ya no existe."}); return null; }
     if(data.borrado){ reportError("guardar los cambios", {message:"Esa ruta fue eliminada."}); return null; }
-    return data.paradas || [];
+    return { paradas: data.paradas || [], estadoRuta: data.estadoRuta };
   };
 
   // Las tres operaciones sobre paradas. Todas releen, aplican el cambio sobre lo
   // que hay ahora y recién ahí escriben.
   const actualizarParada = (rutaId,paradaId,updates) => enCola(async()=>{
-    const actuales = await leerParadas(rutaId);
-    if(!actuales) return false;
+    const ruta = await leerRuta(rutaId);
+    if(!ruta) return false;
+    const actuales = ruta.paradas;
     if(!actuales.some(p=>p.id===paradaId)){
       reportError("guardar los cambios", {message:"Esa parada ya no está en la ruta."});
       return false;
     }
-    return escribirParadas(rutaId, actuales.map(p=>p.id===paradaId?{...p,...updates}:p));
+    return escribirParadas(rutaId, actuales.map(p=>p.id===paradaId?{...p,...updates}:p), ruta.estadoRuta);
   });
 
   const agregarParada = (rutaId,parada) => enCola(async()=>{
-    const actuales = await leerParadas(rutaId);
-    if(!actuales) return false;
+    const ruta = await leerRuta(rutaId);
+    if(!ruta) return false;
+    const actuales = ruta.paradas;
     // La parada nueva va ANTES del retorno: "volver a Ecuador 425" tiene que
     // quedar siempre última. Antes se pegaba al final y el chofer veía una
     // parada después de la de volver a la empresa.
@@ -487,13 +496,13 @@ const useRutas = () => {
     const nuevas = iRetorno===-1
       ? [...actuales, parada]
       : [...actuales.slice(0,iRetorno), parada, ...actuales.slice(iRetorno)];
-    return escribirParadas(rutaId, nuevas);
+    return escribirParadas(rutaId, nuevas, ruta.estadoRuta);
   });
 
   const quitarParada = (rutaId,paradaId) => enCola(async()=>{
-    const actuales = await leerParadas(rutaId);
-    if(!actuales) return false;
-    return escribirParadas(rutaId, actuales.filter(p=>p.id!==paradaId));
+    const ruta = await leerRuta(rutaId);
+    if(!ruta) return false;
+    return escribirParadas(rutaId, ruta.paradas.filter(p=>p.id!==paradaId), ruta.estadoRuta);
   });
 
   const confirmarRuta = async(rutaId) => {
@@ -800,7 +809,7 @@ const ConsultaPanel = ({contacts,saveConsulta,addRuta,onRutasCreadas}) => {
       // empresa. Sin esta parada el chofer no tenía el botón de cierre y la
       // ruta nunca se finalizaba sola.
       const retorno1={id:uid(),contacto:{id:"ecuador425",type:"empresa",name:"Ecuador 425 — Criterio",address:"Ecuador 425, Buenos Aires, Argentina",phone:"",notes:"Retorno a la empresa",lat:-34.6037,lng:-58.4370},tipo:"retorno",estado:"pendiente",prendas:""};
-      const res = await addRuta({fecha:today(),camionetaId:cam.id,paradas:[...paradas,retorno1],creada:timeNow()});
+      const res = await addRuta({fecha:today(),camionetaId:cam.id,paradas:[...ordenarParadas(paradas),retorno1],creada:timeNow()});
       if(res){
         hubo++;
         // Sacamos de la selección lo que ya quedó creado: si la ruta de la otra
