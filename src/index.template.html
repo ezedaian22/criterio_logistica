@@ -24,8 +24,8 @@
 /*__APP__*/
 </script>
   <script type="text/javascript">
-    // Registro del service worker: fuera del bloque de Babel a propósito, para
-    // que se registre aunque la compilación del JSX falle.
+    // Registro del service worker, en su propio script para que quede aislado
+    // del código de la app: si algo fallara ahí, el registro igual ocurre.
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", function () {
         navigator.serviceWorker.register("/sw.js").catch(function (e) {
