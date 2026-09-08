@@ -104,6 +104,49 @@ const waLink = (phone, msg) => {
 };
 // "empresa" es el tipo de la parada de retorno a Ecuador 425. Sin él, esa parada
 // mostraba una etiqueta vacía y con un color inválido.
+// Distancia en km entre dos puntos (fórmula del semiverseno). Estaba repetida
+// en el mapa y en el panel de cercanos; ahora hay una sola.
+const distKm = (lat1,lng1,lat2,lng2) => {
+  const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+};
+
+// Dirección de la empresa: origen y cierre de todas las rutas.
+const ECUADOR = {lat:-34.6037, lng:-58.4370};
+
+// Ordena las paradas al CREAR la ruta (nunca después: reordenar un recorrido ya
+// empezado le movería al chofer paradas que ya hizo).
+// Primero las prioritarias por horario, y el resto por cercanía: desde Ecuador
+// 425 se va tomando siempre la parada más próxima a la anterior. No es la ruta
+// óptima —eso es un problema matemático mucho más caro— pero evita los zigzags
+// del orden en que se fueron tocando los puntos en el mapa.
+const ordenarParadas = (ps) => {
+  const prioritarias = ps.filter(p=>p.prioritario)
+    .sort((a,b)=>(a.horaPriority||"").localeCompare(b.horaPriority||""));
+  const restantes = ps.filter(p=>!p.prioritario);
+
+  const ubic = (p)=> (p && p.contacto && p.contacto.lat!=null && p.contacto.lng!=null) ? p.contacto : null;
+  let desde = prioritarias.length ? (ubic(prioritarias[prioritarias.length-1]) || ECUADOR) : ECUADOR;
+
+  const pendientes = [...restantes];
+  const ordenadas = [];
+  while(pendientes.length){
+    let mejor = 0, mejorDist = Infinity;
+    pendientes.forEach((p,i)=>{
+      const u = ubic(p);
+      if(!u) return; // sin coordenadas: queda para el final
+      const d = distKm(desde.lat,desde.lng,u.lat,u.lng);
+      if(d < mejorDist){ mejorDist = d; mejor = i; }
+    });
+    const [p] = pendientes.splice(mejor,1);
+    ordenadas.push(p);
+    const u = ubic(p);
+    if(u) desde = u;
+  }
+  return [...prioritarias, ...ordenadas];
+};
+
 const typeLabel = {taller:"Taller",cliente:"Cliente",proveedor:"Proveedor",botonera:"Botonera",empresa:"Empresa"};
 const typeColor = {taller:C.accent,cliente:C.info,proveedor:C.success,botonera:C.warning,empresa:C.accentLight};
 const paradaDesc = (p) => {
@@ -587,69 +630,89 @@ const CampoParada = ({valor,onGuardar,...props}) => {
 };
 
 // ─── MAPA LEAFLET ─────────────────────────────────────────────────────────────
+// Dibuja el HTML de un popup de asignación. Se regenera cada vez que cambian
+// las asignaciones: antes se armaba una sola vez y al reabrir el popup los
+// botones seguían mostrando el estado viejo.
+const popupAsignacion = (c, asig) => `
+  <div style="font-weight:700;font-size:14px;margin-bottom:2px;">${c.name}</div>
+  <div style="font-size:11px;color:#888;margin-bottom:2px;">${typeLabel[c.type]||""}</div>
+  <div style="font-size:12px;color:#666;margin-bottom:10px;">${c.address||""}</div>
+  <div style="display:flex;gap:6px;">
+    ${CAMIONETAS.map(x=>`
+      <button data-cid="${c.id}" data-cam="${x.id}"
+        style="flex:1;padding:8px 4px;border-radius:6px;border:2px solid ${x.color};
+        background:${asig===x.id?x.color:"transparent"};
+        color:${asig===x.id?"#000":x.color};
+        cursor:pointer;font-size:12px;font-weight:700;">
+        🚐 ${x.chofer}
+      </button>
+    `).join("")}
+  </div>
+`;
+
 const MapaTalleres = ({talleres,asignaciones,onAsignar}) => {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markersRef = useRef({});
+  // El handler vive en un ref: así los popups siempre llaman a la versión más
+  // nueva sin que haga falta rehacer los markers cuando el padre re-dibuja.
+  const onAsignarRef = useRef(onAsignar);
+  useEffect(()=>{ onAsignarRef.current = onAsignar; });
+
+  // Firma de la lista: solo rehacemos los puntos si cambian los talleres o sus
+  // coordenadas, no en cada dibujado de la pantalla.
+  const clave = talleres.map(t=>`${t.id}:${t.lat},${t.lng}`).join("|");
 
   useEffect(()=>{
     if(!mapRef.current||mapInstance.current) return;
     mapInstance.current = L.map(mapRef.current).setView([-34.64,-58.44],12);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(mapInstance.current);
+    // Destruir el mapa al cerrar: antes quedaba vivo con sus listeners y se
+    // acumulaba una instancia por cada vez que se abría la pantalla.
+    return ()=>{
+      if(mapInstance.current){ mapInstance.current.remove(); mapInstance.current=null; }
+      markersRef.current={};
+    };
   },[]);
 
+  // Crear/rehacer los puntos solo cuando cambia la lista de talleres.
   useEffect(()=>{
     if(!mapInstance.current) return;
     Object.values(markersRef.current).forEach(m=>m.remove());
     markersRef.current={};
-
     talleres.forEach(t=>{
       if(!t.lat||!t.lng) return;
+      const m = L.marker([t.lat,t.lng]).addTo(mapInstance.current);
+      const popup = document.createElement("div");
+      popup.style.cssText = "font-family:'DM Sans',sans-serif;min-width:180px;";
+      popup.addEventListener("click",(e)=>{
+        const btn = e.target.closest("button[data-cam]");
+        if(!btn) return;
+        onAsignarRef.current(btn.getAttribute("data-cid"), Number(btn.getAttribute("data-cam")));
+        if(mapInstance.current) mapInstance.current.closePopup();
+      });
+      m.bindPopup(popup,{maxWidth:220});
+      markersRef.current[t.id]={marker:m, popup};
+    });
+  },[clave]);
+
+  // Refrescar íconos y popups cuando cambian las asignaciones.
+  useEffect(()=>{
+    if(!mapInstance.current) return;
+    talleres.forEach(t=>{
+      const reg = markersRef.current[t.id];
+      if(!reg) return;
       const asig = asignaciones[t.id];
       const cam = CAMIONETAS.find(c=>c.id===asig);
       const color = cam?cam.color:"#888888";
-
-      // Punto más grande para facilitar el toque en celular
-      const icon = L.divIcon({
+      // Punto grande para facilitar el toque en celular
+      reg.marker.setIcon(L.divIcon({
         html:`<div style="background:${color};width:26px;height:26px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${cam?"#000":"#fff"}">${cam?cam.chofer[0]:(t.name||"?")[0].toUpperCase()}</div>`,
         iconSize:[22,22],iconAnchor:[11,11],className:""
-      });
-
-      const m = L.marker([t.lat,t.lng],{icon}).addTo(mapInstance.current);
-
-      // Popup con botones de asignación
-      const popupContent = document.createElement("div");
-      popupContent.style.cssText = "font-family:'DM Sans',sans-serif;min-width:180px;";
-      popupContent.innerHTML = `
-        <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${t.name}</div>
-        <div style="font-size:12px;color:#666;margin-bottom:10px;">${t.address}</div>
-        <div style="display:flex;gap:6px;">
-          ${CAMIONETAS.map(c=>`
-            <button data-id="${t.id}" data-cam="${c.id}"
-              style="flex:1;padding:8px 4px;border-radius:6px;border:2px solid ${c.color};
-              background:${asig===c.id?c.color:"transparent"};
-              color:${asig===c.id?"#000":c.color};
-              cursor:pointer;font-size:12px;font-weight:700;">
-              🚐 ${c.chofer}
-            </button>
-          `).join("")}
-        </div>
-      `;
-
-      // Event listener para los botones del popup
-      popupContent.addEventListener("click",(e)=>{
-        const btn = e.target.closest("button[data-cam]");
-        if(!btn) return;
-        const tid = btn.getAttribute("data-id");
-        const camId = Number(btn.getAttribute("data-cam"));
-        onAsignar(tid, camId);
-        mapInstance.current.closePopup();
-      });
-
-      m.bindPopup(popupContent, {maxWidth:220});
-      markersRef.current[t.id]=m;
+      }));
+      reg.popup.innerHTML = popupAsignacion(t, asig);
     });
-  },[talleres,asignaciones,onAsignar]);
+  },[clave,asignaciones]);
 
   return (
     <div>
@@ -1086,110 +1149,79 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markersRef = useRef({});
+  const onAsignarRef = useRef(onAsignar);
+  useEffect(()=>{ onAsignarRef.current = onAsignar; });
 
-  const distKm = (lat1,lng1,lat2,lng2) => {
-    const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
-    const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
-    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-  };
+  // Firma de la lista: si aparece un contacto nuevo (por ejemplo después de
+  // "Ubicar en el mapa"), hay que rehacer los puntos. Antes solo se creaban una
+  // vez y los contactos nuevos no se dibujaban nunca.
+  const clave = contacts.map(c=>`${c.id}:${c.lat},${c.lng}`).join("|");
 
   useEffect(()=>{
     if(!mapRef.current||mapInstance.current) return;
     mapInstance.current = L.map(mapRef.current).setView([-34.64,-58.44],12);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(mapInstance.current);
+    return ()=>{
+      if(mapInstance.current){ mapInstance.current.remove(); mapInstance.current=null; }
+      markersRef.current={};
+    };
   },[]);
 
-  // Cada vez que cambian asignaciones: actualizar iconos de todos los markers
+  // Crear los puntos cuando cambia la lista de contactos.
   useEffect(()=>{
     if(!mapInstance.current) return;
+    Object.values(markersRef.current).forEach(r=>r.marker.remove());
+    markersRef.current={};
+    contacts.forEach(c=>{
+      if(!c.lat||!c.lng) return;
+      const m = L.marker([c.lat,c.lng]).addTo(mapInstance.current);
+      const popup = document.createElement("div");
+      popup.style.cssText="font-family:'DM Sans',sans-serif;min-width:190px;";
+      popup.addEventListener("click",(e)=>{
+        const btn=e.target.closest("button[data-cam]");
+        if(!btn) return;
+        onAsignarRef.current(btn.getAttribute("data-cid"),Number(btn.getAttribute("data-cam")));
+        if(mapInstance.current) mapInstance.current.closePopup();
+      });
+      m.bindPopup(popup,{maxWidth:240});
+      markersRef.current[c.id]={marker:m, popup};
+    });
+  },[clave]);
 
-    // IDs de contactos asignados
+  // Refrescar íconos y popups cuando cambian las asignaciones.
+  useEffect(()=>{
+    if(!mapInstance.current) return;
     const asignadosIds = new Set(Object.keys(asignaciones).map(String));
 
-    // Para cada asignado, calcular sus cercanos (que NO están asignados)
+    // Cercanos: contactos sin asignar a menos de 5 km de alguno asignado.
     const cercanosIds = new Set();
     contacts.forEach(c=>{
-      if(!asignadosIds.has(String(c.id))) return;
-      if(!c.lat||!c.lng) return;
+      if(!asignadosIds.has(String(c.id)) || !c.lat || !c.lng) return;
       contacts.forEach(x=>{
-        if(asignadosIds.has(String(x.id))) return; // ya es parada, no marcar doble
-        if(!x.lat||!x.lng) return;
+        if(asignadosIds.has(String(x.id)) || !x.lat || !x.lng) return;
         if(distKm(c.lat,c.lng,x.lat,x.lng)<=5) cercanosIds.add(String(x.id));
       });
     });
 
-    // Si no hay markers aún, crearlos; si ya existen, solo actualizar iconos
-    const yaExisten = Object.keys(markersRef.current).length > 0;
-
-    if(!yaExisten){
-      contacts.forEach(c=>{
-        if(!c.lat||!c.lng) return;
-        const asig = asignaciones[c.id]||asignaciones[String(c.id)];
-        const cam = CAMIONETAS.find(x=>x.id===asig);
-        const esAsig = asignadosIds.has(String(c.id));
-        const esCercano = cercanosIds.has(String(c.id));
-        const dotColor = esAsig?"#FFD700":esCercano?"#00E5FF":cam?cam.color:(typeColor[c.type]||"#888");
-        const size = esAsig?34:esCercano?30:26;
-        const border = esAsig?"3px solid #fff":esCercano?"2px solid #00E5FF":"2px solid white";
-        const inicial = esAsig?"★":cam?cam.chofer[0]:(c.name||"?")[0].toUpperCase();
-        const fontSize = esAsig?15:10;
-
-        const icon = L.divIcon({
-          html:`<div style="background:${dotColor};width:${size}px;height:${size}px;border-radius:50%;border:${border};box-shadow:0 2px 10px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:800;color:#000">${inicial}</div>`,
-          iconSize:[size,size],iconAnchor:[size/2,size/2],className:""
-        });
-
-        const m = L.marker([c.lat,c.lng],{icon}).addTo(mapInstance.current);
-
-        const popup = document.createElement("div");
-        popup.style.cssText="font-family:'DM Sans',sans-serif;min-width:190px;";
-        const asigActual = asignaciones[c.id]||asignaciones[String(c.id)];
-        popup.innerHTML=`
-          <div style="font-weight:700;font-size:14px;margin-bottom:2px;">${c.name}</div>
-          <div style="font-size:11px;color:#888;margin-bottom:2px;">${typeLabel[c.type]||""}</div>
-          <div style="font-size:12px;color:#666;margin-bottom:10px;">${c.address}</div>
-          <div style="display:flex;gap:6px;">
-            ${CAMIONETAS.map(x=>`
-              <button data-cid="${c.id}" data-cam="${x.id}"
-                style="flex:1;padding:8px 4px;border-radius:6px;border:2px solid ${x.color};
-                background:${asigActual===x.id?x.color:"transparent"};
-                color:${asigActual===x.id?"#000":x.color};
-                cursor:pointer;font-size:12px;font-weight:700;">
-                🚐 ${x.chofer}
-              </button>
-            `).join("")}
-          </div>
-        `;
-        popup.addEventListener("click",(e)=>{
-          const btn=e.target.closest("button[data-cam]");
-          if(btn){ onAsignar(btn.getAttribute("data-cid"),Number(btn.getAttribute("data-cam"))); mapInstance.current.closePopup(); }
-        });
-
-        m.bindPopup(popup,{maxWidth:240});
-        markersRef.current[c.id]=m;
-      });
-    } else {
-      // Solo actualizar iconos
-      Object.entries(markersRef.current).forEach(([cid,m])=>{
-        const c = contacts.find(x=>String(x.id)===String(cid));
-        if(!c) return;
-        const asig = asignaciones[c.id]||asignaciones[String(c.id)];
-        const cam = CAMIONETAS.find(x=>x.id===asig);
-        const esAsig = asignadosIds.has(String(c.id));
-        const esCercano = cercanosIds.has(String(c.id));
-        const dotColor = esAsig?"#FFD700":esCercano?"#00E5FF":cam?cam.color:(typeColor[c.type]||"#888");
-        const size = esAsig?34:esCercano?30:26;
-        const border = esAsig?"3px solid #fff":esCercano?"2px solid #00E5FF":"2px solid white";
-        const inicial = esAsig?"★":cam?cam.chofer[0]:(c.name||"?")[0].toUpperCase();
-        const fontSize = esAsig?15:10;
-        const icon = L.divIcon({
-          html:`<div style="background:${dotColor};width:${size}px;height:${size}px;border-radius:50%;border:${border};box-shadow:0 2px 10px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:800;color:#000">${inicial}</div>`,
-          iconSize:[size,size],iconAnchor:[size/2,size/2],className:""
-        });
-        m.setIcon(icon);
-      });
-    }
-  },[contacts,asignaciones,onAsignar]);
+    contacts.forEach(c=>{
+      const reg = markersRef.current[c.id];
+      if(!reg) return;
+      const asig = asignaciones[c.id]||asignaciones[String(c.id)];
+      const cam = CAMIONETAS.find(x=>x.id===asig);
+      const esAsig = asignadosIds.has(String(c.id));
+      const esCercano = cercanosIds.has(String(c.id));
+      const dotColor = esAsig?"#FFD700":esCercano?"#00E5FF":cam?cam.color:(typeColor[c.type]||"#888");
+      const size = esAsig?34:esCercano?30:26;
+      const border = esAsig?"3px solid #fff":esCercano?"2px solid #00E5FF":"2px solid white";
+      const inicial = esAsig?"★":cam?cam.chofer[0]:(c.name||"?")[0].toUpperCase();
+      const fontSize = esAsig?15:10;
+      reg.marker.setIcon(L.divIcon({
+        html:`<div style="background:${dotColor};width:${size}px;height:${size}px;border-radius:50%;border:${border};box-shadow:0 2px 10px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:800;color:#000">${inicial}</div>`,
+        iconSize:[size,size],iconAnchor:[size/2,size/2],className:""
+      }));
+      reg.popup.innerHTML = popupAsignacion(c, asig);
+    });
+  },[clave,asignaciones]);
 
 
   return(
@@ -1621,39 +1653,10 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
               <div style={angosto
                 ? {padding:"12px 16px"}
                 : {flex:1,minHeight:180,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
-            {/* Lista de asignados */}
-            {Object.keys(asignacionesNuevaRuta).length>0&&(
-              <div style={{marginBottom:16,background:C.surface,borderRadius:12,padding:12,border:`1px solid ${C.border}`}}>
-                <p style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:10,fontWeight:700}}>
-                  ✅ Paradas asignadas ({Object.keys(asignacionesNuevaRuta).length})
-                </p>
-                {CAMIONETAS.map(cam=>{
-                  const delCam=Object.entries(asignacionesNuevaRuta).filter(([,v])=>v===cam.id);
-                  if(delCam.length===0) return null;
-                  return(
-                    <div key={cam.id} style={{marginBottom:10}}>
-                      <p style={{fontSize:11,color:cam.color,fontWeight:700,marginBottom:4}}>🚐 {cam.chofer} — {delCam.length} parada{delCam.length>1?"s":""}</p>
-                      {delCam.map(([cid])=>{
-                        const c=contacts.find(x=>x.id===cid||x.id===Number(cid));
-                        if(!c) return null;
-                        return(
-                          <div key={cid} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",borderRadius:8,background:cam.color+"15",marginBottom:4}}>
-                            <span style={{fontSize:13,color:"#FFD700"}}>★</span>
-                            <span style={{flex:1,fontSize:13,fontWeight:600}}>{c.name}</span>
-                            <span style={{fontSize:11,color:C.muted}}>{typeLabel[c.type]}</span>
-                            <button onClick={()=>setAsignacionesNuevaRuta(prev=>{const n={...prev};delete n[cid];return n;})}
-                              style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14,lineHeight:1,padding:2}}>✕</button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Búsqueda manual */}
-            <div>
+            {/* Búsqueda manual — va ARRIBA de la lista de asignados para que el
+                desplegable de resultados tenga lugar debajo. Antes quedaba al
+                final y la lista se recortaba contra el borde del modal. */}
+            <div style={{marginBottom:16}}>
               <p style={{fontSize:12,color:C.muted,marginBottom:8}}>¿No encontrás un contacto en el mapa? Buscalo acá:</p>
               <ContactoBuscador contacts={contacts} value={contactoId} onChange={(id)=>setContactoId(id)}/>
               {contactoId&&(
@@ -1669,14 +1672,67 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
                 </div>
               )}
             </div>
+
+            {/* Lista de asignados */}
+            {Object.keys(asignacionesNuevaRuta).length>0&&(
+              <div style={{marginBottom:16,background:C.surface,borderRadius:12,padding:12,border:`1px solid ${C.border}`}}>
+                <p style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:10,fontWeight:700}}>
+                  ✅ Paradas asignadas ({Object.keys(asignacionesNuevaRuta).length})
+                </p>
+                {CAMIONETAS.map(cam=>{
+                  const delCam=Object.entries(asignacionesNuevaRuta).filter(([,v])=>v===cam.id);
+                  if(delCam.length===0) return null;
+                  return(
+                    <div key={cam.id} style={{marginBottom:10}}>
+                      <p style={{fontSize:11,color:cam.color,fontWeight:700,marginBottom:4}}>🚐 {cam.chofer} — {delCam.length} parada{delCam.length>1?"s":""}</p>
+                      {delCam.map(([cid])=>{
+                        const c=contacts.find(x=>x.id===cid||x.id===Number(cid));
+                        if(!c) return null;
+                        const acc=accionesNuevaRuta[cid];
+                        const esTaller=c.type==="taller";
+                        return(
+                          <div key={cid} style={{background:cam.color+"15",borderRadius:8,marginBottom:4,padding:"5px 8px"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <span style={{fontSize:13,color:"#FFD700"}}>★</span>
+                              <span style={{flex:1,fontSize:13,fontWeight:600}}>{c.name}</span>
+                              <span style={{fontSize:11,color:C.muted}}>{typeLabel[c.type]}</span>
+                              {esTaller&&(
+                                <button onClick={()=>setEditandoAccion(editandoAccion===cid?null:cid)}
+                                  title="Qué se hace en este taller"
+                                  style={{background:"none",border:"none",color:C.accent,cursor:"pointer",fontSize:13,padding:2}}>✏️</button>
+                              )}
+                              <button onClick={()=>{
+                                setAsignacionesNuevaRuta(prev=>{const n={...prev};delete n[cid];return n;});
+                                setAccionesNuevaRuta(prev=>{const n={...prev};delete n[cid];return n;});
+                                if(editandoAccion===cid) setEditandoAccion(null);
+                              }} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14,lineHeight:1,padding:2}}>✕</button>
+                            </div>
+                            {esTaller&&(
+                              <p style={{fontSize:11,color:C.muted,paddingLeft:21,marginTop:1}}>
+                                {paradaDesc({tipo:"taller",...(acc||{retirar:true})})}
+                                {acc&&acc.prioritario&&` · ⭐${acc.horaPriority?" "+acc.horaPriority:""}`}
+                              </p>
+                            )}
+                            {editandoAccion===cid&&(
+                              <FormTaller contacto={c}
+                                onConfirm={(opc)=>{ setAccionesNuevaRuta(prev=>({...prev,[cid]:opc})); setEditandoAccion(null); }}
+                                onCancel={()=>setEditandoAccion(null)}/>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
             </div>{/* fin columna central */}
 
             {/* Lateral derecho — cercanos */}
             {(()=>{
-              const R=6371;
-              const dkm=(lat1,lng1,lat2,lng2)=>{const dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));};
+              
               const asignadosIds = new Set(Object.keys(asignacionesNuevaRuta).map(String));
               // TODAS las paradas asignadas, tengan o no coordenadas
               const asignadas = Object.keys(asignacionesNuevaRuta)
@@ -1686,8 +1742,8 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
               const filas = asignadas.map(c=>{
                 if(!c.lat||!c.lng) return {parada:c,estado:"sincoords",cercanos:[]};
                 const cerca = conCoords
-                  .filter(x=>!asignadosIds.has(String(x.id))&&dkm(c.lat,c.lng,x.lat,x.lng)<=5)
-                  .sort((a,b)=>dkm(c.lat,c.lng,a.lat,a.lng)-dkm(c.lat,c.lng,b.lat,b.lng));
+                  .filter(x=>!asignadosIds.has(String(x.id))&&distKm(c.lat,c.lng,x.lat,x.lng)<=5)
+                  .sort((a,b)=>distKm(c.lat,c.lng,a.lat,a.lng)-distKm(c.lat,c.lng,b.lat,b.lng));
                 return {parada:c,estado:cerca.length?"ok":"vacio",cercanos:cerca};
               });
               return(
@@ -1719,7 +1775,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
                               <div key={x.id} style={{padding:"5px 7px",background:"#00E5FF0D",borderRadius:7,border:"1px solid #00E5FF22",marginBottom:4}}>
                                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:4}}>
                                   <span style={{fontSize:13,color:"#00E5FF",fontWeight:600,lineHeight:1.3}}>{x.name}</span>
-                                  <span style={{fontSize:12,color:C.muted,flexShrink:0,whiteSpace:"nowrap"}}>{dkm(parada.lat,parada.lng,x.lat,x.lng).toFixed(1)} km</span>
+                                  <span style={{fontSize:12,color:C.muted,flexShrink:0,whiteSpace:"nowrap"}}>{distKm(parada.lat,parada.lng,x.lat,x.lng).toFixed(1)} km</span>
                                 </div>
                               </div>
                             ))}
@@ -1744,10 +1800,12 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
                 const ps=asig.map(([cid])=>{
                   const c=contacts.find(x=>x.id===cid||x.id===Number(cid));
                   const acc=accionesNuevaRuta[cid]||{retirar:c?.type==="taller",entregarBolsa:false,entregarCorte:false,entregarTela:false};
-                  return {id:uid(),contacto:c,tipo:c?.type==="taller"?"taller":"entrega",estado:"pendiente",...acc,prioritario:false,horaPriority:"",prendas:"",nota:""};
+                  // Ojo con el orden: los valores por defecto van ANTES de ...acc.
+                  // Al revés, prioritario y horaPriority pisaban lo elegido con ✏️.
+                  return {id:uid(),contacto:c,tipo:c?.type==="taller"?"taller":"entrega",estado:"pendiente",prioritario:false,horaPriority:"",prendas:"",nota:"",...acc};
                 });
                 const retorno2={id:uid(),contacto:{id:"ecuador425",type:"empresa",name:"Ecuador 425 — Criterio",address:"Ecuador 425, Buenos Aires, Argentina",phone:"",notes:"Retorno a la empresa",lat:-34.6037,lng:-58.4370},tipo:"retorno",estado:"pendiente",prendas:""};
-                await addRuta({fecha,camionetaId:cam.id,paradas:[...ps,retorno2],creada:timeNow()});
+                await addRuta({fecha,camionetaId:cam.id,paradas:[...ordenarParadas(ps),retorno2],creada:timeNow()});
               }
               setSaving(false);
               setModal(false);
