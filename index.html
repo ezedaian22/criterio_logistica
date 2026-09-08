@@ -586,7 +586,14 @@ const useRutas = () => {
       setLoading(false);
       return;
     }
-    const nuevas = data || [];
+    const recientes = data || [];
+    // Conservamos las rutas de fechas viejas que se hayan pedido a mano y que no
+    // entran en las últimas 60. Si no, cualquier cambio que llegara por realtime
+    // reemplazaba la lista entera y al admin que estaba mirando una fecha vieja
+    // se le vaciaba la pantalla, sin forma de recuperarla salvo recargando.
+    const ids = new Set(recientes.map(r => r.id));
+    const viejasEnPantalla = rutasRef.current.filter(r => !ids.has(r.id));
+    const nuevas = viejasEnPantalla.length ? [...recientes, ...viejasEnPantalla] : recientes;
     if (conAviso) detectarCambios(rutasRef.current, nuevas);
     aplicar(nuevas);
     setLoading(false);
@@ -612,10 +619,12 @@ const useRutas = () => {
   // Cuando el admin elige una fecha más vieja, la pedimos a la base y la
   // sumamos a lo que ya tenemos. No se sube el límite general a propósito:
   // eso haría que cada chofer descargue mucho más en cada apertura.
-  const fechasPedidas = useRef(new Set());
+  // Se consulta cada vez que la fecha elegida no tiene ninguna ruta cargada. No
+  // se lleva registro de "fechas ya pedidas": si por lo que fuera la ruta se
+  // perdiera de memoria, volver a elegir la fecha la trae de nuevo en vez de
+  // dejar la pantalla vacía para siempre.
   const asegurarFecha = async fecha => {
-    if (!fecha || fechasPedidas.current.has(fecha)) return;
-    fechasPedidas.current.add(fecha);
+    if (!fecha) return;
     if (rutasRef.current.some(r => r.fecha === fecha)) return; // ya la tenemos
     const {
       data,
