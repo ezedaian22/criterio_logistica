@@ -1266,6 +1266,31 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
   const [formTallerExtra,setFormTallerExtra] = useState(null);
   const angosto = useEsAngosto(); // en celular el modal de Nueva Ruta se apila en vez de ir en dos columnas
 
+  // La ruta del chofer se calcula ACÁ ARRIBA, fuera de cualquier rama. Antes se
+  // hacía dentro del if del chofer y el useEffect de la hora de inicio quedaba
+  // adentro también: React exige que la cantidad y el orden de los hooks sea
+  // igual en todos los dibujados, y así la pantalla llamaba uno más cuando el
+  // usuario era chofer. No explotaba porque el rol nunca cambia con la pantalla
+  // montada, pero se rompía en cuanto se tocara la lógica de sesión.
+  // Si hay varias rutas del mismo día para la camioneta (por ejemplo se creó una
+  // nueva después de finalizar la anterior) se prioriza la que esté activa; si
+  // están todas finalizadas, la más reciente por hora de creación.
+  const esChofer = currentUser.role==="chofer";
+  const rutaChofer = (()=>{
+    if(!esChofer) return null;
+    const delDia = rutas.filter(r=>r.fecha===today()&&Number(r.camionetaId)===Number(currentUser.camionetaId));
+    return delDia.find(r=>r.estadoRuta!=="finalizada")
+        || [...delDia].sort((a,b)=>(b.creada||"").localeCompare(a.creada||""))[0]
+        || null;
+  })();
+
+  // Registrar la hora de inicio cuando el chofer abre la ruta por primera vez.
+  useEffect(()=>{
+    if(!rutaChofer || rutaChofer.horaInicio) return;
+    db.from("rutas").update({horaInicio:timeNow()}).eq("id",rutaChofer.id)
+      .then(({error})=>{ if(error) reportError("registrar la hora de inicio", error); });
+  },[rutaChofer?.id]);
+
   const selContactExtra = contacts.find(x=>x.id===contactoExtra||x.id===String(contactoExtra));
 
   const agregarParadaExtra = ()=>{
@@ -1334,25 +1359,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
 
   if(currentUser.role==="chofer"){
     if(loading) return <Loading text="Cargando ruta..."/>;
-    // Si hay varias rutas del mismo día para esta camioneta (ej: se creó una nueva
-    // después de finalizar la anterior), priorizamos la que esté activa (no finalizada).
-    // Si todas están finalizadas, tomamos la más reciente (creada/horaInicio más tarde).
-    const rutasDelDia = rutas.filter(r=>r.fecha===today()&&Number(r.camionetaId)===Number(currentUser.camionetaId));
-    const rutaActiva = rutasDelDia.find(r=>r.estadoRuta!=="finalizada");
-    const ruta = rutaActiva || [...rutasDelDia].sort((a,b)=>(b.creada||"").localeCompare(a.creada||""))[0];
-
-    // Registrar hora de inicio cuando el chofer abre la ruta por primera vez.
-    // Se sacó la reescritura de paradas que había acá: las reescribía sin
-    // cambiarlas solo para "disparar" el update, y ahora que una ruta con todas
-    // las paradas resueltas se autofinaliza, esa escritura de más podía volver a
-    // finalizar una ruta que el chofer acababa de reabrir. El update de abajo ya
-    // dispara el realtime por sí solo.
-    useEffect(()=>{
-      if(ruta&&!ruta.horaInicio){
-        db.from("rutas").update({horaInicio:timeNow()}).eq("id",ruta.id)
-          .then(({error})=>{ if(error) reportError("registrar la hora de inicio", error); });
-      }
-    },[ruta?.id]);
+    const ruta = rutaChofer;
 
     if(!ruta) return (
       <div className="fade-in" style={{textAlign:"center",padding:60}}>
@@ -2103,6 +2110,22 @@ function App(){
   const toastTimer = useRef(null);
   const errorTimer = useRef(null);
   const alertaTimer = useRef(null);
+  // Altura real de la alerta del chofer. Antes el contenido se corría 60px
+  // fijos, pero en pantalla angosta la alerta pasa los 120px y tapaba el
+  // encabezado justo cuando el chofer quiere tocar algo.
+  const alertaRef = useRef(null);
+  const [altoAlerta,setAltoAlerta] = useState(0);
+  useEffect(()=>{
+    if(!alertaParada){ setAltoAlerta(0); return; }
+    const medir = ()=>{ if(alertaRef.current) setAltoAlerta(alertaRef.current.offsetHeight); };
+    medir();
+    window.addEventListener("resize",medir);
+    window.addEventListener("orientationchange",medir);
+    return ()=>{
+      window.removeEventListener("resize",medir);
+      window.removeEventListener("orientationchange",medir);
+    };
+  },[alertaParada]);
 
   // Escuchar actualizaciones de choferes (solo admin). El aviso del sistema se
   // arma acá y no dentro del hook para que el chofer no se auto-notifique.
@@ -2250,7 +2273,7 @@ function App(){
 
   // Alerta flotante para chofer
   const AlertaFlotante = alertaParada ? (
-    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:C.danger,padding:"14px 20px",boxShadow:"0 4px 20px rgba(0,0,0,.6)"}}>
+    <div ref={alertaRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:C.danger,padding:"14px 20px",boxShadow:"0 4px 20px rgba(0,0,0,.6)"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:8}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontSize:22}}>⚠️</span>
@@ -2283,7 +2306,7 @@ function App(){
       {AlertaFlotante}
       {ToastAdmin}
       {ErrorApp}
-      <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",paddingTop:alertaParada?"60px":"0"}}>
+      <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",paddingTop:altoAlerta?`${altoAlerta}px`:"0"}}>
         <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:100}}>
           <h1 style={{fontSize:24,color:C.accent,letterSpacing:2}}>CRITERIO</h1>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
