@@ -160,6 +160,18 @@ const Modal = ({title,onClose,children}) => {
   </div>
   );
 };
+// Uno o varios botones a Google Maps, según cuántos tramos haga falta para que
+// no se corte el recorrido. Con un solo tramo se ve igual que antes.
+const LinksMapa = ({urls,etiqueta,estilo}) => (
+  <>
+    {urls.map((u,i)=>(
+      <a key={i} href={u} target="_blank" rel="noreferrer" style={estilo}>
+        {urls.length>1?`${etiqueta} · tramo ${i+1}/${urls.length}`:etiqueta}
+      </a>
+    ))}
+  </>
+);
+
 const Loading = ({text="Cargando..."}) => (
   <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,padding:60,color:C.muted}}>
     <span className="spin">⟳</span> {text}
@@ -329,6 +341,23 @@ const useRutas = () => {
     return ()=>db.removeChannel(ch);
   },[]);
 
+  // La carga inicial trae las últimas 60 rutas, que son alrededor de un mes.
+  // Cuando el admin elige una fecha más vieja, la pedimos a la base y la
+  // sumamos a lo que ya tenemos. No se sube el límite general a propósito:
+  // eso haría que cada chofer descargue mucho más en cada apertura.
+  const fechasPedidas = useRef(new Set());
+  const asegurarFecha = async(fecha) => {
+    if(!fecha || fechasPedidas.current.has(fecha)) return;
+    fechasPedidas.current.add(fecha);
+    if(rutasRef.current.some(r=>r.fecha===fecha)) return; // ya la tenemos
+    const {data,error}=await db.from("rutas").select("*").eq("fecha",fecha).eq("borrado",false);
+    if(error){ reportError("cargar las rutas de esa fecha", error); return; }
+    if(!data || data.length===0) return;
+    const conocidas = new Set(rutasRef.current.map(r=>r.id));
+    const nuevas = data.filter(r=>!conocidas.has(r.id));
+    if(nuevas.length) aplicar([...rutasRef.current, ...nuevas]);
+  };
+
   const add = async(r) => {
     const n={...r,id:uid(),estadoRuta:"borrador"};
     const {error}=await db.from("rutas").insert([n]);
@@ -445,7 +474,7 @@ const useRutas = () => {
     aplicar(rutasRef.current.filter(r=>r.id!==rutaId));
     return true;
   };
-  return {rutas,loading,add,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta};
+  return {rutas,loading,add,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta,asegurarFecha};
 };
 
 // Las consultas se guardan pero no se muestran en ninguna pantalla. Antes este
@@ -1185,8 +1214,11 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
   );
 };
 
-const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta,loading,currentUser,paradaActual}) => {
+const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta,asegurarFecha,loading,currentUser,paradaActual}) => {
   const [fecha,setFecha] = useState(today());
+  // Si la fecha elegida no está entre las que se cargaron al arrancar, se pide
+  // a la base (ver asegurarFecha en useRutas).
+  useEffect(()=>{ if(asegurarFecha) asegurarFecha(fecha); },[fecha]);
   const [modal,setModal] = useState(false);
   const [contactoId,setContactoId] = useState("");
   const [saving,setSaving] = useState(false);
@@ -1231,30 +1263,41 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
   const updateParada = (rutaId,paradaId,updates)=>actualizarParada(rutaId,paradaId,updates);
 
   const EMPRESA = encodeURIComponent("Ecuador 425, Buenos Aires, Argentina");
-  const mapsUrl = (ps, soloPendientes=false)=>{
+  // Google Maps corta el recorrido alrededor de los 10 puntos por link. Con
+  // rutas de más de 10 paradas se perdían las últimas sin ningún aviso, así que
+  // el recorrido se parte en tramos y cada uno arranca donde terminó el anterior.
+  const MAX_DESTINOS = 8;
+
+  const armarTramos = (origen, destinos, final) => {
+    if(destinos.length===0) return [`https://www.google.com/maps/dir/${origen}/${final}`];
+    const tramos=[];
+    let desde=origen;
+    for(let i=0;i<destinos.length;i+=MAX_DESTINOS){
+      const trozo=destinos.slice(i,i+MAX_DESTINOS);
+      const esUltimo=i+MAX_DESTINOS>=destinos.length;
+      tramos.push(`https://www.google.com/maps/dir/${desde}/${trozo.join("/")}${esUltimo?`/${final}`:""}`);
+      desde=trozo[trozo.length-1];
+    }
+    return tramos;
+  };
+
+  // Devuelve SIEMPRE un array: uno solo si la ruta entra en un link, varios si hay que partirla.
+  const mapsUrls = (ps, soloPendientes=false)=>{
     const todasSinRetorno = ps.filter(p=>p.tipo!=="retorno");
-    const pendientes = todasSinRetorno.filter(p=>p.estado==="pendiente");
-    const completadas = todasSinRetorno.filter(p=>p.estado==="completada");
+    const dir = (p)=>encodeURIComponent(p.contacto.address);
 
     if(soloPendientes){
-      // Origen = última parada completada (o Ecuador 425 si no hay ninguna)
+      const pendientes = todasSinRetorno.filter(p=>p.estado==="pendiente");
+      const completadas = todasSinRetorno.filter(p=>p.estado==="completada");
+      // Origen = última parada completada (o Ecuador 425 si no hay ninguna).
+      // Ordena por horaLlegada, que desde el punto 41 se guarda en 24 h.
       const ultimaCompletada = completadas.length>0
-        ? encodeURIComponent(completadas.slice().sort((a,b)=>{
-            const ta = a.horaLlegada||"";
-            const tb = b.horaLlegada||"";
-            return tb.localeCompare(ta); // más reciente primero
-          })[0].contacto.address)
+        ? dir(completadas.slice().sort((a,b)=>(b.horaLlegada||"").localeCompare(a.horaLlegada||""))[0])
         : EMPRESA;
-      if(pendientes.length===0){
-        // Solo queda volver — mostrar desde última completada a Ecuador 425
-        return `https://www.google.com/maps/dir/${ultimaCompletada}/${EMPRESA}`;
-      }
-      const destinos = pendientes.map(p=>encodeURIComponent(p.contacto.address)).join("/");
-      return `https://www.google.com/maps/dir/${ultimaCompletada}/${destinos}/${EMPRESA}`;
+      return armarTramos(ultimaCompletada, pendientes.map(dir), EMPRESA);
     }
-    // Ruta completa: Ecuador 425 → todas → Ecuador 425
-    if(todasSinRetorno.length===0) return `https://www.google.com/maps/search/?api=1&query=${EMPRESA}`;
-    return `https://www.google.com/maps/dir/${EMPRESA}/${todasSinRetorno.map(p=>encodeURIComponent(p.contacto.address)).join("/")}/${EMPRESA}`;
+    if(todasSinRetorno.length===0) return [`https://www.google.com/maps/search/?api=1&query=${EMPRESA}`];
+    return armarTramos(EMPRESA, todasSinRetorno.map(dir), EMPRESA);
   };
 
   if(currentUser.role==="chofer"){
@@ -1306,18 +1349,15 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
             </p>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <a href={mapsUrl(ruta.paradas, false)} target="_blank" rel="noreferrer"
-              style={{background:C.info+"99",color:"#fff",padding:"10px 14px",borderRadius:8,textDecoration:"none",fontWeight:600,fontSize:13}}>
-              🗺️ Ruta completa
-            </a>
+            <LinksMapa urls={mapsUrls(ruta.paradas,false)} etiqueta="🗺️ Ruta completa"
+              estilo={{background:C.info+"99",color:"#fff",padding:"10px 14px",borderRadius:8,textDecoration:"none",fontWeight:600,fontSize:13}}/>
             {(()=>{
               const pend = ruta.paradas.filter(p=>p.estado==="pendiente"&&p.tipo!=="retorno");
               const soloRetorno = ruta.paradas.filter(p=>p.estado==="pendiente").length===1&&ruta.paradas.find(p=>p.estado==="pendiente"&&p.tipo==="retorno");
               if(pend.length>0||soloRetorno) return (
-                <a href={mapsUrl(ruta.paradas, true)} target="_blank" rel="noreferrer"
-                  style={{background:C.accent,color:"#000",padding:"10px 14px",borderRadius:8,textDecoration:"none",fontWeight:700,fontSize:13}}>
-                  {pend.length>0?`🗺️ Lo que falta (${pend.length})`:"🏠 Volver a Ecuador 425"}
-                </a>
+                <LinksMapa urls={mapsUrls(ruta.paradas,true)}
+                  etiqueta={pend.length>0?`🗺️ Lo que falta (${pend.length})`:"🏠 Volver a Ecuador 425"}
+                  estilo={{background:C.accent,color:"#000",padding:"10px 14px",borderRadius:8,textDecoration:"none",fontWeight:700,fontSize:13}}/>
               );
               return null;
             })()}
@@ -1478,16 +1518,15 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 <span style={{background:C.surface,borderRadius:20,padding:"4px 14px",fontSize:13,color:C.accent,fontWeight:600}}>{pct}%</span>
-                <a href={mapsUrl(ruta.paradas, false)} target="_blank" rel="noreferrer"
-                  style={{background:C.info+"99",color:"#fff",padding:"8px 12px",borderRadius:8,textDecoration:"none",fontWeight:600,fontSize:12}}>🗺️ Todo</a>
+                <LinksMapa urls={mapsUrls(ruta.paradas,false)} etiqueta="🗺️ Todo"
+                  estilo={{background:C.info+"99",color:"#fff",padding:"8px 12px",borderRadius:8,textDecoration:"none",fontWeight:600,fontSize:12}}/>
               {(()=>{
                   const pend = ruta.paradas.filter(p=>p.estado==="pendiente"&&p.tipo!=="retorno");
                   const soloRetorno = ruta.paradas.filter(p=>p.estado==="pendiente").length===1&&ruta.paradas.find(p=>p.estado==="pendiente"&&p.tipo==="retorno");
                   if(pend.length>0||soloRetorno) return (
-                    <a href={mapsUrl(ruta.paradas, true)} target="_blank" rel="noreferrer"
-                      style={{background:C.accent,color:"#000",padding:"8px 12px",borderRadius:8,textDecoration:"none",fontWeight:700,fontSize:12}}>
-                      {pend.length>0?`🗺️ Falta (${pend.length})`:"🏠 Volver"}
-                    </a>
+                    <LinksMapa urls={mapsUrls(ruta.paradas,true)}
+                      etiqueta={pend.length>0?`🗺️ Falta (${pend.length})`:"🏠 Volver"}
+                      estilo={{background:C.accent,color:"#000",padding:"8px 12px",borderRadius:8,textDecoration:"none",fontWeight:700,fontSize:12}}/>
                   );
                   return null;
                 })()}
@@ -1799,8 +1838,11 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
     </div>
   );
 }; 
-const ResumenPanel = ({rutas,loading}) => {
+const ResumenPanel = ({rutas,loading,asegurarFecha}) => {
   const [fecha,setFecha] = useState(today());
+  // Si la fecha elegida no está entre las que se cargaron al arrancar, se pide
+  // a la base (ver asegurarFecha en useRutas).
+  useEffect(()=>{ if(asegurarFecha) asegurarFecha(fecha); },[fecha]);
   const rutasDia = rutas.filter(r=>r.fecha===fecha);
   if(loading) return <Loading/>;
   const totalPrendas = rutasDia.reduce((acc,r)=>acc+r.paradas.reduce((a,p)=>a+(Number(p.prendas)||0),0),0);
@@ -1994,7 +2036,7 @@ function App(){
   });
   const [tab,setTab] = useState("rutas");
   const {contacts,loading:cL,add,update,del,geocodeMissing} = useContacts();
-  const {rutas,loading:rL,add:addRuta,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta} = useRutas();
+  const {rutas,loading:rL,add:addRuta,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta,asegurarFecha} = useRutas();
   const {save:saveConsulta} = useConsultas();
 
   const [alertaParada,setAlertaParada] = useState(null);
@@ -2200,10 +2242,10 @@ function App(){
           ))}
         </div>
         <div style={{flex:1,padding:"24px 20px",maxWidth:800,margin:"0 auto",width:"100%"}}>
-          {tab==="rutas"&&<RutasPanel contacts={contacts} rutas={rutas} addRuta={addRuta} actualizarParada={actualizarParada} agregarParada={agregarParada} quitarParada={quitarParada} confirmarRuta={confirmarRuta} finalizarRuta={finalizarRuta} eliminarRuta={eliminarRuta} loading={rL} currentUser={user} paradaActual={paradaActual}/>}
+          {tab==="rutas"&&<RutasPanel contacts={contacts} rutas={rutas} addRuta={addRuta} asegurarFecha={asegurarFecha} actualizarParada={actualizarParada} agregarParada={agregarParada} quitarParada={quitarParada} confirmarRuta={confirmarRuta} finalizarRuta={finalizarRuta} eliminarRuta={eliminarRuta} loading={rL} currentUser={user} paradaActual={paradaActual}/>}
           {tab==="consulta"&&isAdmin&&<ConsultaPanel contacts={contacts} saveConsulta={saveConsulta} addRuta={addRuta} onRutasCreadas={()=>setTab("rutas")}/>}
           {tab==="contactos"&&isAdmin&&<ContactosPanel contacts={contacts} add={add} update={update} del={del} loading={cL} geocodeMissing={geocodeMissing}/>}
-          {tab==="resumen"&&isAdmin&&<ResumenPanel rutas={rutas} loading={rL}/>}
+          {tab==="resumen"&&isAdmin&&<ResumenPanel rutas={rutas} loading={rL} asegurarFecha={asegurarFecha}/>}
           {tab==="historial"&&isAdmin&&<HistorialPanel rutas={rutas} loading={rL} eliminarRuta={eliminarRuta}/>}
         </div>
         <div style={{textAlign:"center",padding:"16px 20px",color:C.muted,fontSize:11,borderTop:`1px solid ${C.border}`}}>
