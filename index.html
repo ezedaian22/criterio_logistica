@@ -573,6 +573,13 @@ const useRutas = () => {
       });
     });
   };
+
+  // Fechas fuera de las últimas 60 que el admin tiene abiertas. Se vuelven a
+  // pedir en cada recarga: NO alcanza con conservar lo que ya estaba en
+  // pantalla, porque entonces una ruta borrada desde otro dispositivo se
+  // quedaba pegada para siempre (no viene en la respuesta, y "no viene" se
+  // confundía con "es vieja, consérvala").
+  const fechasAbiertas = useRef(new Set());
   const fetch_ = async conAviso => {
     // borrado=false: las rutas no se borran de verdad, se marcan. Ver `eliminarRuta`.
     const {
@@ -586,14 +593,18 @@ const useRutas = () => {
       setLoading(false);
       return;
     }
-    const recientes = data || [];
-    // Conservamos las rutas de fechas viejas que se hayan pedido a mano y que no
-    // entran en las últimas 60. Si no, cualquier cambio que llegara por realtime
-    // reemplazaba la lista entera y al admin que estaba mirando una fecha vieja
-    // se le vaciaba la pantalla, sin forma de recuperarla salvo recargando.
-    const ids = new Set(recientes.map(r => r.id));
-    const viejasEnPantalla = rutasRef.current.filter(r => !ids.has(r.id));
-    const nuevas = viejasEnPantalla.length ? [...recientes, ...viejasEnPantalla] : recientes;
+    let nuevas = data || [];
+    const faltantes = [...fechasAbiertas.current].filter(f => !nuevas.some(r => r.fecha === f));
+    if (faltantes.length) {
+      const {
+        data: extra,
+        error: errExtra
+      } = await db.from("rutas").select("*").in("fecha", faltantes).eq("borrado", false);
+      if (errExtra) reportError("cargar las rutas de esa fecha", errExtra);else if (extra && extra.length) {
+        const ids = new Set(nuevas.map(r => r.id));
+        nuevas = [...nuevas, ...extra.filter(r => !ids.has(r.id))];
+      }
+    }
     if (conAviso) detectarCambios(rutasRef.current, nuevas);
     aplicar(nuevas);
     setLoading(false);
@@ -625,6 +636,12 @@ const useRutas = () => {
   // dejar la pantalla vacía para siempre.
   const asegurarFecha = async fecha => {
     if (!fecha) return;
+    // Recordamos la fecha para que las recargas la vuelvan a pedir. Guardamos
+    // unas pocas: el admin mira de a una por vez.
+    fechasAbiertas.current.add(fecha);
+    if (fechasAbiertas.current.size > 5) {
+      fechasAbiertas.current.delete(fechasAbiertas.current.values().next().value);
+    }
     if (rutasRef.current.some(r => r.fecha === fecha)) return; // ya la tenemos
     const {
       data,
