@@ -17,7 +17,10 @@
  * Borrar datos.
  */
 
-const VERSION = "criterio-v1";
+// v2: la app dejó de usar Babel en el navegador (ver build.js). Al subir la
+// versión, el activate borra las cachés viejas y de paso se va el babel.min.js
+// de 2,5 MB que quedó guardado en los teléfonos.
+const VERSION = "criterio-v2";
 const DOC_CACHE = VERSION + "-doc";
 const LIB_CACHE = VERSION + "-lib";
 const TILE_CACHE = VERSION + "-tiles";

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Criterio Logística</title>
+  <script type="text/javascript" crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script type="text/javascript" crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script type="text/javascript" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="manifest" href="/manifest.json"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png"/>
+  <link rel="apple-touch-icon" href="/icon-192.png"/>
+  <meta name="theme-color" content="#c9a96e"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Criterio"/>
+
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+/*__APP__*/
+</script>
+  <script type="text/javascript">
+    // Registro del service worker: fuera del bloque de Babel a propósito, para
+    // que se registre aunque la compilación del JSX falle.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("/sw.js").catch(function (e) {
+          console.warn("[Criterio] service worker no registrado:", e);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
