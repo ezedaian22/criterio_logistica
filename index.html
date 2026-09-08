@@ -77,8 +77,31 @@ const today = () => {
   const dd = String(d.getDate()).padStart(2,"0");
   return `${d.getFullYear()}-${mm}-${dd}`;
 };
-const timeNow = () => new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+// Hora en 24 h ("13:43"), NO con toLocaleTimeString: en locale argentino
+// devolvía "01:43 p. m.", y como las horas se guardan y se comparan como texto,
+// "09:35 a. m." resultaba mayor que "01:43 p. m.". Por eso la app podía elegir
+// la ruta de la mañana como "la más reciente" y armar el link de "lo que falta"
+// desde una parada equivocada.
+const timeNow = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+};
 const uid = () => `${Date.now()}-${Math.random().toString(36).substr(2,9)}`;
+
+// Link de WhatsApp. Los celulares argentinos necesitan 549 + área + número:
+// con "54" solo, WhatsApp lo interpreta como línea fija y suele contestar que
+// el número no está en WhatsApp. Solo saca el 15 cuando el resultado queda en
+// los 10 dígitos que corresponden, para no romper números ya bien escritos.
+const waLink = (phone, msg) => {
+  let n = String(phone||"").replace(/\D/g,"");
+  if(n.startsWith("54")) n = n.slice(2);
+  if(n.startsWith("9"))  n = n.slice(1);
+  if(n.length > 10){
+    const m = n.match(/^(\d{2,4})15(\d+)$/);
+    if(m && (m[1]+m[2]).length === 10) n = m[1] + m[2];
+  }
+  return `https://wa.me/549${n}?text=${encodeURIComponent(msg)}`;
+};
 // "empresa" es el tipo de la parada de retorno a Ecuador 425. Sin él, esa parada
 // mostraba una etiqueta vacía y con un color inválido.
 const typeLabel = {taller:"Taller",cliente:"Cliente",proveedor:"Proveedor",botonera:"Botonera",empresa:"Empresa"};
@@ -385,7 +408,14 @@ const useRutas = () => {
   const agregarParada = (rutaId,parada) => enCola(async()=>{
     const actuales = await leerParadas(rutaId);
     if(!actuales) return false;
-    return escribirParadas(rutaId, [...actuales, parada]);
+    // La parada nueva va ANTES del retorno: "volver a Ecuador 425" tiene que
+    // quedar siempre última. Antes se pegaba al final y el chofer veía una
+    // parada después de la de volver a la empresa.
+    const iRetorno = actuales.findIndex(p=>p.tipo==="retorno");
+    const nuevas = iRetorno===-1
+      ? [...actuales, parada]
+      : [...actuales.slice(0,iRetorno), parada, ...actuales.slice(iRetorno)];
+    return escribirParadas(rutaId, nuevas);
   });
 
   const quitarParada = (rutaId,paradaId) => enCola(async()=>{
@@ -733,7 +763,7 @@ const ConsultaPanel = ({contacts,saveConsulta,addRuta,onRutasCreadas}) => {
                   "wa.me/54", que no abre ningún chat, pero el botón se veía
                   igual de verde y parecía funcionar. */}
               {talleres.filter(t=>t.phone && t.phone.trim()).map(t=>(
-                <a key={t.id} href={`https://wa.me/54${t.phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer"
+                <a key={t.id} href={waLink(t.phone, msg)} target="_blank" rel="noreferrer"
                   style={{background:"#25D366",color:"#fff",padding:"8px 16px",borderRadius:8,fontSize:13,textDecoration:"none",fontWeight:600}}>
                   📱 {t.name}
                 </a>
@@ -2015,10 +2045,24 @@ function App(){
     };
   },[]);
 
+  // El permiso de notificaciones se pide con el primer toque, no al entrar:
+  // Chrome ignora el pedido cuando no viene de un gesto del usuario, así que
+  // antes podía no preguntarse nunca. Se pide una sola vez y solo si todavía
+  // no hay respuesta (ni concedido ni bloqueado).
   useEffect(()=>{
-    if("Notification"in window&&user){
-      Notification.requestPermission();
-    }
+    if(!user || !("Notification" in window)) return;
+    if(Notification.permission !== "default") return;
+    const pedir = ()=>{
+      quitar();
+      try{ Notification.requestPermission(); }catch(e){}
+    };
+    const quitar = ()=>{
+      window.removeEventListener("pointerdown",pedir);
+      window.removeEventListener("keydown",pedir);
+    };
+    window.addEventListener("pointerdown",pedir);
+    window.addEventListener("keydown",pedir);
+    return quitar;
   },[user]);
 
   const [paradaActual,setParadaActual] = useState(null);
@@ -2033,7 +2077,9 @@ function App(){
       if("Notification"in window&&Notification.permission==="granted"){
         new Notification("⚠️ Criterio — Parada sin confirmar",{
           body:`Próxima parada: ${pend[0].contacto.name}. No olvidés anotar lo que pasó.`,
-          requireInteraction:true,
+          // Se va sola. Con requireInteraction quedaba pegada hasta cerrarla a mano.
+          requireInteraction:false,
+          tag:"criterio-pendiente",
         });
       }
       setAlertaParada({nombre:pend[0].contacto.name,cantidad:pend.length});
@@ -2045,12 +2091,11 @@ function App(){
     }
   },[]);
 
-  useEffect(()=>{
-    if(user?.role!=="chofer") return;
-    // Recordatorio cada 5 minutos
-    const iv=setInterval(()=>checkParadas(rutas,user),5*60*1000);
-    return ()=>clearInterval(iv);
-  },[rutas,user,checkParadas]);
+  // Se sacó el recordatorio cada 5 minutos: el temporizador se reiniciaba con
+  // cada cambio en las rutas —o sea, con cada parada que el chofer marcaba— así
+  // que casi nunca llegaba a dispararse, y cuando lo hacía dejaba una
+  // notificación que no se iba sola. El aviso al volver de Google Maps, acá
+  // abajo, cubre el momento en que realmente sirve.
 
   // Detectar cuando el chofer vuelve a la app (cierra Maps y vuelve)
   useEffect(()=>{
