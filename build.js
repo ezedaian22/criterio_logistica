@@ -78,6 +78,17 @@ async function cargarBabel() {
     process.exit(1);
   }
 
+  // El código va inline dentro de un <script>. Si alguna vez apareciera la
+  // secuencia </script> dentro de un texto, cerraría la etiqueta antes de tiempo
+  // y rompería la página entera. Se corta acá en vez de publicar algo roto.
+  if (/<\/script/i.test(compilado)) {
+    console.error(
+      "\nFALLA: el código contiene '</script>', que cortaría la etiqueta y rompería el HTML.\n" +
+      "Partilo en el fuente, por ejemplo como '<\\/scr' + 'ipt>'."
+    );
+    process.exit(1);
+  }
+
   const aviso =
     "<!--\n" +
     "  ARCHIVO GENERADO POR build.js — NO EDITAR A MANO.\n" +

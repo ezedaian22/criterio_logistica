@@ -86,8 +86,13 @@ self.addEventListener("fetch", (e) => {
       (async () => {
         try {
           const res = await fetch(req);
-          const c = await caches.open(DOC_CACHE);
-          c.put("/", res.clone());
+          // Solo guardamos una respuesta buena. Si el servidor contesta un error
+          // o una página de mantenimiento, guardarla dejaría al chofer viendo ESE
+          // error cada vez que abra sin señal, hasta la próxima carga exitosa.
+          if (res && res.ok && res.status === 200 && !res.redirected) {
+            const c = await caches.open(DOC_CACHE);
+            c.put("/", res.clone());
+          }
           return res;
         } catch (_) {
           const c = await caches.open(DOC_CACHE);
