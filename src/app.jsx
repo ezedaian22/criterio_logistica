@@ -332,6 +332,7 @@ const useRutas = () => {
             chofer: cam?cam.chofer:"",
             parada: np.contacto?.name,
             prendas: np.prendas,
+            articulos: detalleArticulos(np),
             nota: np.nota,
             tipo: np.estado,
           }}));
@@ -635,6 +636,113 @@ const CampoParada = ({valor,onGuardar,...props}) => {
       onChange={e=>{editando.current=true;setTxt(e.target.value);}}
       onBlur={commit}
       onKeyDown={e=>{if(e.key==="Enter") e.target.blur();}}/>
+  );
+};
+
+// Detalle legible de lo que entregó un taller: "Pantalón 30 · Camisa 12".
+// Vacío si la parada no tiene artículos cargados (por ejemplo, rutas viejas).
+const detalleArticulos = (p) => (p && Array.isArray(p.articulos) ? p.articulos : [])
+  .filter(a => Number(a.cantidad) > 0)
+  .map(a => `${(a.articulo||"").trim() || "Sin nombre"} ${Number(a.cantidad)}`)
+  .join(" · ");
+
+// Renglones de artículo + cantidad, para cuando un taller entrega varias cosas.
+// Guarda la lista y, en el MISMO cambio, el total en `prendas`: así el Resumen,
+// el Historial y los avisos siguen leyendo el número de siempre, y las rutas
+// cargadas antes de esto (que solo tienen el total) no se rompen.
+// Igual que CampoParada, guarda al salir de un campo y no con cada tecla.
+const ArticulosParada = ({parada,onGuardar}) => {
+  const desdeParada = (p) => {
+    if(Array.isArray(p.articulos) && p.articulos.length){
+      return p.articulos.map(a=>({id:a.id||uid(), articulo:a.articulo||"", cantidad:a.cantidad==null?"":String(a.cantidad)}));
+    }
+    // Ruta de antes de este cambio: el total viejo pasa a ser el primer renglón,
+    // para no perder lo que ya estaba cargado.
+    if(p.prendas) return [{id:uid(), articulo:"", cantidad:String(p.prendas)}];
+    return [{id:uid(), articulo:"", cantidad:""}];
+  };
+
+  const [filas,setFilas] = useState(()=>desdeParada(parada));
+  const filasRef = useRef(filas);
+  filasRef.current = filas;
+  const editando = useRef(false);
+
+  // Si la parada cambia desde afuera (otro dispositivo, un refetch) y el chofer
+  // no está escribiendo, nos ponemos al día.
+  const firma = JSON.stringify([parada.articulos||null, parada.prendas||""]);
+  useEffect(()=>{ if(!editando.current) setFilas(desdeParada(parada)); },[firma]);
+
+  const limpiar = (fs) => fs
+    .map(f=>({
+      id: f.id,
+      articulo: (f.articulo||"").trim(),
+      cantidad: String(f.cantidad).trim()==="" ? "" : String(Math.max(0, Math.floor(Number(f.cantidad)||0))),
+    }))
+    .filter(f=>f.articulo!=="" || Number(f.cantidad)>0);
+
+  const totalDe = (fs) => fs.reduce((a,f)=>a+(Number(f.cantidad)||0),0);
+
+  const guardar = (fs) => {
+    editando.current = false;
+    const limpias = limpiar(fs);
+    const total = totalDe(limpias);
+    const prendas = total>0 ? String(total) : "";
+    const antes = JSON.stringify([(parada.articulos||[]).map(a=>[a.articulo||"", String(a.cantidad??"")]), parada.prendas||""]);
+    const despues = JSON.stringify([limpias.map(a=>[a.articulo, a.cantidad]), prendas]);
+    if(antes===despues) return; // no escribir si no cambió nada
+    onGuardar({articulos:limpias, prendas});
+  };
+
+  const cambiar = (id,campo,valor) => {
+    editando.current = true;
+    setFilas(fs=>fs.map(f=>f.id===id?{...f,[campo]:valor}:f));
+  };
+  const agregar = () => {
+    editando.current = true;
+    setFilas(fs=>[...fs, {id:uid(), articulo:"", cantidad:"", nueva:true}]);
+  };
+  const quitar = (id) => {
+    const nf = filasRef.current.filter(f=>f.id!==id);
+    const resto = nf.length ? nf : [{id:uid(), articulo:"", cantidad:""}];
+    setFilas(resto);
+    guardar(resto);
+  };
+
+  const alSalir = () => guardar(filasRef.current);
+  const conEnter = (e) => { if(e.key==="Enter") e.target.blur(); };
+  const total = totalDe(limpiar(filas));
+
+  return (
+    <div>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {filas.map((f,i)=>{
+          const tieneAlgo = (f.articulo||"").trim()!=="" || String(f.cantidad).trim()!=="";
+          return (
+            <div key={f.id} style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input value={f.articulo} placeholder={i===0?"Artículo (ej: pantalón)":"Artículo"}
+                autoFocus={!!f.nueva} style={{flex:1,minWidth:0}}
+                onChange={e=>cambiar(f.id,"articulo",e.target.value)}
+                onBlur={alSalir} onKeyDown={conEnter}/>
+              <input value={f.cantidad} placeholder="Cant." type="number" inputMode="numeric" min="0"
+                style={{width:80,flexShrink:0}}
+                onChange={e=>cambiar(f.id,"cantidad",e.target.value)}
+                onBlur={alSalir} onKeyDown={conEnter}/>
+              {(filas.length>1 || tieneAlgo) ? (
+                <button onClick={()=>quitar(f.id)} title="Quitar este artículo"
+                  style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:16,padding:"0 4px",flexShrink:0}}>✕</button>
+              ) : <span style={{width:24,flexShrink:0}}/>}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8,gap:8,flexWrap:"wrap"}}>
+        <button onClick={agregar}
+          style={{background:"transparent",border:`1px dashed ${C.border}`,color:C.accent,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:13}}>
+          + Agregar artículo
+        </button>
+        {total>0&&<span style={{color:C.muted,fontSize:13}}>Total: <b style={{color:C.text}}>{total}</b> prendas</span>}
+      </div>
+    </div>
   );
 };
 
@@ -1454,9 +1562,8 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
                   <div style={{borderTop:`1px solid ${C.border}`,paddingTop:14}}>
                     {esTaller&&p.retirar&&(
                       <div style={{marginBottom:12}}>
-                        <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:6}}>Prendas retiradas</label>
-                        <CampoParada type="number" placeholder="Cantidad" style={{width:160}}
-                          valor={p.prendas} onGuardar={v=>updateParada(ruta.id,p.id,{prendas:v})}/>
+                        <label style={{fontSize:12,color:C.muted,display:"block",marginBottom:6}}>Artículos retirados</label>
+                        <ArticulosParada parada={p} onGuardar={cambios=>updateParada(ruta.id,p.id,cambios)}/>
                       </div>
                     )}
                     <div style={{marginBottom:10}}>
@@ -1493,6 +1600,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
                         </button>
                       </div>
                     </div>
+                    {detalleArticulos(p)&&<p style={{color:C.muted,fontSize:12,marginBottom:p.nota?4:0}}>📦 {detalleArticulos(p)}</p>}
                     {p.nota&&<p style={{color:C.muted,fontSize:12,fontStyle:"italic"}}>"{p.nota}"</p>}
                   </div>
                 )}
@@ -1594,7 +1702,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
                     {p.prioritario&&<span className="badge" style={{background:C.warning+"22",color:C.warning,fontSize:11}}>⭐{p.horaPriority&&` ${p.horaPriority}`}</span>}
                     {p.emergencia&&<span className="badge" style={{background:C.danger+"22",color:C.danger,fontSize:11}}>🚨 Imprevisto</span>}
                   </div>
-                  <p style={{color:C.muted,fontSize:12}}>{paradaDesc(p)}{p.prendas&&` · ${p.prendas} prendas`}</p>
+                  <p style={{color:C.muted,fontSize:12}}>{paradaDesc(p)}{p.prendas&&` · ${p.prendas} prendas`}{detalleArticulos(p)&&` (${detalleArticulos(p)})`}</p>
                   {p.instrucciones&&<p style={{color:C.warning,fontSize:12,marginTop:2}}>📋 {p.instrucciones}</p>}
                   {p.nota&&<p style={{color:C.accent,fontSize:12,fontStyle:"italic"}}>"{p.nota}"</p>}
                 </div>
@@ -2081,6 +2189,7 @@ const HistorialPanel = ({rutas,loading,eliminarRuta}) => {
                       <p style={{color:C.muted,fontSize:12}}>
                         {paradaDesc(p)}
                         {p.prendas&&` · ${p.prendas} prendas`}
+                        {detalleArticulos(p)&&` (${detalleArticulos(p)})`}
                         {p.horaLlegada&&` · ${p.horaLlegada}`}
                       </p>
                     </div>
@@ -2141,18 +2250,18 @@ function App(){
   useEffect(()=>{
     if(!user||user.role!=="admin") return;
     const handler = (e)=>{
-      const {chofer,parada,prendas,nota,tipo} = e.detail;
+      const {chofer,parada,prendas,articulos,nota,tipo} = e.detail;
       if("Notification"in window && Notification.permission==="granted"){
         new Notification(
           tipo==="completada" ? `✅ ${chofer} completó una parada` : `❌ ${chofer} — no se pudo entregar`,
           {
-            body:`${parada||""}${prendas?` — ${prendas} prendas`:""}${nota?` · "${nota}"`:""}`,
+            body:`${parada||""}${prendas?` — ${prendas} prendas`:""}${articulos?` (${articulos})`:""}${nota?` · "${nota}"`:""}`,
             requireInteraction:false,
             tag:"criterio-"+(parada||""),
           }
         );
       }
-      setToastAdmin({chofer,parada,prendas,nota,tipo,ts:Date.now()});
+      setToastAdmin({chofer,parada,prendas,articulos,nota,tipo,ts:Date.now()});
       if(toastTimer.current) clearTimeout(toastTimer.current);
       toastTimer.current = setTimeout(()=>setToastAdmin(null),6000);
     };
@@ -2272,6 +2381,7 @@ function App(){
           <p style={{fontSize:12,color:"rgba(255,255,255,.85)"}}>
             {toastAdmin.tipo==="completada"?"Completado":"No se pudo entregar"}
             {toastAdmin.prendas&&` · ${toastAdmin.prendas} prendas`}
+            {toastAdmin.articulos&&` (${toastAdmin.articulos})`}
             {toastAdmin.nota&&` · "${toastAdmin.nota}"`}
           </p>
         </div>
