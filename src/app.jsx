@@ -80,6 +80,34 @@ const waLink = (phone, msg) => {
 };
 // "empresa" es el tipo de la parada de retorno a Ecuador 425. Sin él, esa parada
 // mostraba una etiqueta vacía y con un color inválido.
+// Lee coordenadas escritas a mano o pegadas desde Google Maps. Devuelve
+// {lat,lng} o null. Acepta "-34.6037, -58.4370" y los links largos de Maps
+// (.../@lat,lng,17z  y  ?q=lat,lng).
+// NO acepta los links cortos (maps.app.goo.gl): para resolverlos hay que
+// preguntarle a Google y el navegador bloquea ese pedido. En ese caso hay que
+// usar "Copiar coordenadas" en la app de Maps.
+const leerCoordenadas = (txt) => {
+  const t = String(txt||"").trim();
+  if(!t) return null;
+  const m = t.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/)
+         || t.match(/[?&](?:q|query|daddr|ll)=(-?\d+(?:\.\d+)?)(?:,|%2C)\s*(-?\d+(?:\.\d+)?)/i)
+         || t.match(/^(-?\d{1,2}(?:\.\d+)?)\s*[,;]\s*(-?\d{1,3}(?:\.\d+)?)$/);
+  if(!m) return null;
+  const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+  if(!isFinite(lat) || !isFinite(lng) || Math.abs(lat)>90 || Math.abs(lng)>180) return null;
+  return {lat, lng};
+};
+const formatoCoords = (lat,lng) =>
+  (lat==null||lng==null) ? "" : `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`;
+
+// Qué se MUESTRA como dirección de un destino: la dirección escrita y, si no
+// tiene, las coordenadas como referencia.
+const dirVisible = (c) => (c && c.address && c.address.trim())
+  ? c.address
+  : (c && c.lat!=null && c.lng!=null ? formatoCoords(c.lat,c.lng) : "");
+// A dónde se NAVEGA: la dirección si la tiene, y si no, las coordenadas.
+const destinoMaps = (c) => dirVisible(c);
+
 // Distancia en km entre dos puntos (fórmula del semiverseno). Estaba repetida
 // en el mapa y en el panel de cercanos; ahora hay una sola.
 const distKm = (lat1,lng1,lat2,lng2) => {
@@ -238,7 +266,8 @@ const useContacts = () => {
   };
 
   const add = async(c) => {
-    const coords = await geocode(c.address);
+    // Si vienen coordenadas puestas a mano, mandan: no se consulta a Nominatim.
+    const coords = (c.lat!=null && c.lng!=null) ? {lat:c.lat, lng:c.lng} : await geocode(c.address);
     const n={...c, id:uid(), lat: coords.lat, lng: coords.lng};
     const {data,error}=await db.from("contacts").insert([n]).select();
     if(error){ reportError("guardar el contacto", error); return false; }
@@ -251,8 +280,14 @@ const useContacts = () => {
     // dejaba el punto en el lugar viejo.
     const anterior = contacts.find(x=>x.id===c.id);
     const cambioDireccion = anterior ? (anterior.address||"") !== (c.address||"") : false;
+    // Coordenadas puestas a mano: si cambiaron respecto de las guardadas, mandan
+    // ellas y no se vuelve a buscar nada, aunque también se haya tocado la
+    // dirección.
+    const cambioCoords = anterior
+      ? (Number(anterior.lat)!==Number(c.lat) || Number(anterior.lng)!==Number(c.lng))
+      : (c.lat!=null && c.lng!=null);
     let updated = {...c};
-    if(cambioDireccion || !c.lat || !c.lng) {
+    if(!cambioCoords && (cambioDireccion || !c.lat || !c.lng)) {
       const coords = await geocode(c.address);
       // Si Nominatim no encuentra nada, conservamos las coordenadas que ya tenía
       // en vez de dejarlo sin ubicación en el mapa.
@@ -753,7 +788,7 @@ const ArticulosParada = ({parada,onGuardar}) => {
 const popupAsignacion = (c, asig) => `
   <div style="font-weight:700;font-size:14px;margin-bottom:2px;">${c.name}</div>
   <div style="font-size:11px;color:#888;margin-bottom:2px;">${typeLabel[c.type]||""}</div>
-  <div style="font-size:12px;color:#666;margin-bottom:10px;">${c.address||""}</div>
+  <div style="font-size:12px;color:#666;margin-bottom:10px;">${dirVisible(c)}</div>
   <div style="display:flex;gap:6px;">
     ${CAMIONETAS.map(x=>`
       <button data-cid="${c.id}" data-cam="${x.id}"
@@ -991,7 +1026,7 @@ const ConsultaPanel = ({contacts,saveConsulta,addRuta,onRutasCreadas}) => {
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:4}}>
                   <div style={{flex:1}}>
                     <p style={{fontWeight:600,fontSize:14}}>{t.name}</p>
-                    <p style={{color:C.muted,fontSize:12}}>{t.address}</p>
+                    <p style={{color:C.muted,fontSize:12}}>{dirVisible(t)}</p>
                   </div>
                   <div style={{display:"flex",gap:6}}>
                     <button onClick={()=>hc(t.id,{estado:"si"})} style={{padding:"8px 14px",borderRadius:8,border:`2px solid ${C.success}`,background:confirmados[t.id]?.estado==="si"?C.success:"transparent",color:confirmados[t.id]?.estado==="si"?"#000":C.success,cursor:"pointer",fontSize:14,fontWeight:700}}>✅</button>
@@ -1046,7 +1081,7 @@ const ConsultaPanel = ({contacts,saveConsulta,addRuta,onRutasCreadas}) => {
                     <Card key={t.id} style={{border:`2px solid ${asig===1?CAMIONETAS[0].color:asig===2?CAMIONETAS[1].color:C.border}`,marginBottom:0}}>
                       <div style={{marginBottom:10}}>
                         <p style={{fontWeight:700,fontSize:15}}>{t.name}</p>
-                        <p style={{color:C.muted,fontSize:12}}>📍 {t.address}</p>
+                        <p style={{color:C.muted,fontSize:12}}>📍 {dirVisible(t)}</p>
                         {confirmados[t.id]?.dia&&<p style={{color:C.accent,fontSize:12,marginTop:2}}>📅 {confirmados[t.id].dia}</p>}
                       </div>
                       <div style={{display:"flex",gap:8}}>
@@ -1136,16 +1171,28 @@ const ContactosPanel = ({contacts,add,update,del,loading,geocodeMissing}) => {
   const [geoProg,setGeoProg] = useState(null);
   const [geoResult,setGeoResult] = useState(null);
   const [modal,setModal] = useState(null);
-  const [form,setForm] = useState({type:"taller",name:"",address:"",phone:"",notes:""});
+  const [form,setForm] = useState({type:"taller",name:"",address:"",phone:"",notes:"",coords:""});
+  const [errorCoords,setErrorCoords] = useState("");
   const [saving,setSaving] = useState(false);
   const byType = filter==="todos"?contacts:contacts.filter(c=>c.type===filter);
   const filtered = search.trim()===""?byType:byType.filter(c=>c.name?.toLowerCase().includes(search.toLowerCase())||c.address?.toLowerCase().includes(search.toLowerCase()));
-  const openNew = ()=>{setForm({type:"taller",name:"",address:"",phone:"",notes:""});setModal("new");};
-  const openEdit = (c)=>{setForm({...c});setModal("edit");};
+  const openNew = ()=>{setForm({type:"taller",name:"",address:"",phone:"",notes:"",coords:""});setErrorCoords("");setModal("new");};
+  // Al editar, el campo de coordenadas viene con las que ya tiene cargadas.
+  const openEdit = (c)=>{setForm({...c, coords: formatoCoords(c.lat,c.lng)});setErrorCoords("");setModal("edit");};
   const save_ = async()=>{
-    if(!form.name||!form.address) return;
+    const coords = leerCoordenadas(form.coords);
+    const hayTexto = (form.coords||"").trim()!=="";
+    if(hayTexto && !coords){
+      setErrorCoords("No pude leer esas coordenadas. Pegá \"-34.6037, -58.4370\" o un link largo de Google Maps (el corto de Compartir no sirve).");
+      return;
+    }
+    setErrorCoords("");
+    // Alcanza con una de las dos: dirección o coordenadas.
+    if(!form.name || (!(form.address||"").trim() && !coords)) return;
+    const {coords:_c, ...limpio} = form;
+    const aGuardar = coords ? {...limpio, lat:coords.lat, lng:coords.lng} : limpio;
     setSaving(true);
-    const ok = modal==="new" ? await add(form) : await update(form);
+    const ok = modal==="new" ? await add(aGuardar) : await update(aGuardar);
     setSaving(false);
     // Si falló, dejamos el modal abierto con lo que escribió: cerrarlo daría a
     // entender que se guardó y perdería los datos.
@@ -1176,7 +1223,7 @@ const ContactosPanel = ({contacts,add,update,del,loading,geocodeMissing}) => {
         )}
       </div>
       {(()=>{
-        const sinCoords = contacts.filter(c=>c.address&&(!c.lat||!c.lng));
+        const sinCoords = contacts.filter(c=>(c.address||"").trim()&&(!c.lat||!c.lng));
         if(sinCoords.length===0&&!geoResult) return null;
         return(
           <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:12,marginBottom:16}}>
@@ -1223,8 +1270,8 @@ const ContactosPanel = ({contacts,add,update,del,loading,geocodeMissing}) => {
                 <span className="badge" style={{background:typeColor[c.type]+"22",color:typeColor[c.type],border:`1px solid ${typeColor[c.type]}44`}}>{typeLabel[c.type]}</span>
                 <span style={{fontWeight:600}}>{c.name}</span>
               </div>
-              <p style={{color:C.muted,fontSize:13}}>📍 {c.address}</p>
-                {c.address&&(!c.lat||!c.lng)&&(
+              <p style={{color:C.muted,fontSize:13}}>📍 {dirVisible(c)}</p>
+                {(c.address||"").trim()&&(!c.lat||!c.lng)&&(
                   <p style={{color:C.danger,fontSize:12,marginTop:2}}>⚠️ Sin ubicación en el mapa</p>
                 )}
               {c.phone&&<p style={{color:C.muted,fontSize:13}}>📞 {c.phone}</p>}
@@ -1242,12 +1289,24 @@ const ContactosPanel = ({contacts,add,update,del,loading,geocodeMissing}) => {
       </div>
       {modal&&(
         <Modal title={modal==="new"?"Nuevo Contacto":"Editar Contacto"} onClose={()=>setModal(null)}>
-          {[["Tipo","select"],["Nombre *","name"],["Dirección *","address"],["Teléfono","phone"],["Notas","notes"]].map(([label,field])=>(
+          {[["Tipo","select"],["Nombre *","name"],["Dirección","address"],["Coordenadas o link de Google Maps","coords"],["Teléfono","phone"],["Notas","notes"]].map(([label,field])=>(
             <div key={field} style={{marginBottom:14}}>
               <label style={{fontSize:12,color:C.muted,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:6}}>{label}</label>
               {field==="select"?(<select value={form.type} onChange={e=>setForm({...form,type:e.target.value})}>{["taller","cliente","proveedor","botonera"].map(t=><option key={t} value={t}>{typeLabel[t]}</option>)}</select>)
               :field==="notes"?(<textarea value={form[field]||""} onChange={e=>setForm({...form,[field]:e.target.value})} rows={2}/>)
-              :(<input value={form[field]||""} onChange={e=>setForm({...form,[field]:e.target.value})}/>)}
+              :(<input value={form[field]||""} placeholder={field==="coords"?"-34.6037, -58.4370":undefined}
+                   onChange={e=>{ if(field==="coords") setErrorCoords(""); setForm({...form,[field]:e.target.value}); }}/>)}
+              {field==="coords"&&(
+                errorCoords
+                  ? <p style={{color:C.danger,fontSize:12,marginTop:4,lineHeight:1.4}}>{errorCoords}</p>
+                  : <p style={{color:C.muted,fontSize:11,marginTop:4,lineHeight:1.4}}>
+                      Opcional. Si la ponés, manda sobre la búsqueda automática. Sirve pegar el link largo de
+                      Google Maps; el corto de "Compartir" no, usá "Copiar coordenadas".
+                    </p>
+              )}
+              {field==="address"&&(
+                <p style={{color:C.muted,fontSize:11,marginTop:4}}>Con la dirección o las coordenadas alcanza.</p>
+              )}
             </div>
           ))}
           <div style={{display:"flex",gap:10,marginTop:8}}>
@@ -1458,7 +1517,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
   // Devuelve SIEMPRE un array: uno solo si la ruta entra en un link, varios si hay que partirla.
   const mapsUrls = (ps, soloPendientes=false)=>{
     const todasSinRetorno = ps.filter(p=>p.tipo!=="retorno");
-    const dir = (p)=>encodeURIComponent(p.contacto.address);
+    const dir = (p)=>encodeURIComponent(destinoMaps(p.contacto));
 
     if(soloPendientes){
       const pendientes = todasSinRetorno.filter(p=>p.estado==="pendiente");
@@ -1540,7 +1599,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
                       <span className="badge" style={{background:typeColor[p.contacto.type]+"22",color:typeColor[p.contacto.type]}}>{typeLabel[p.contacto.type]}</span>
                       {p.prioritario&&<span className="badge" style={{background:C.warning+"22",color:C.warning}}>⭐{p.horaPriority?` · ${p.horaPriority}`:""}</span>}
                     </div>
-                    <p style={{color:C.muted,fontSize:13}}>📍 {p.contacto.address}</p>
+                    <p style={{color:C.muted,fontSize:13}}>📍 {dirVisible(p.contacto)}</p>
                     {esTaller&&(
                       <div style={{marginTop:8}}>
                         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:p.instrucciones?8:0}}>
@@ -1555,7 +1614,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
                     {p.tipo==="retorno"&&<p style={{color:C.accent,fontSize:13,marginTop:6,fontWeight:600}}>🏠 Retorno a la empresa</p>}
                     {!esTaller&&p.tipo!=="retorno"&&<p style={{color:C.accent,fontSize:13,marginTop:6,fontWeight:600}}>{paradaDesc(p)}</p>}
                   </div>
-                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.contacto.address)}`} target="_blank" rel="noreferrer"
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destinoMaps(p.contacto))}`} target="_blank" rel="noreferrer"
                     style={{background:C.info,color:"#fff",padding:"7px 14px",borderRadius:8,textDecoration:"none",fontSize:13,fontWeight:600,flexShrink:0}}>Ir →</a>
                 </div>
                 {!completada&&!noEntregado&&(
