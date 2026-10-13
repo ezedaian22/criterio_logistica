@@ -149,11 +149,41 @@ const waLink = (phone, msg) => {
 // NO acepta los links cortos (maps.app.goo.gl): para resolverlos hay que
 // preguntarle a Google y el navegador bloquea ese pedido. En ese caso hay que
 // usar "Copiar coordenadas" en la app de Maps.
+// Grados, minutos y segundos: 34°40'24.7"S 58°27'48.8"W. Es el formato que
+// muestra Google Maps en el título de un punto, así que se pega seguido. Busca
+// el par en cualquier parte del texto, porque suele venir con la localidad al
+// lado ("...W, lomas de zamora").
+const leerGrados = t => {
+  // Los segundos y las comillas de los minutos son opcionales: acepta
+  // 34°40'24.7"S y también 34°40'S.
+  const re = /(\d{1,3})\s*°\s*(\d{1,2})\s*['′’]?\s*(?:(\d{1,2}(?:[.,]\d+)?)\s*(?:["″”]|''))?\s*([NSEWO])/gi;
+  const hallados = [];
+  let m;
+  while ((m = re.exec(t)) !== null) {
+    const seg = m[3] ? parseFloat(String(m[3]).replace(",", ".")) : 0;
+    let v = parseInt(m[1], 10) + parseInt(m[2], 10) / 60 + seg / 3600;
+    const h = m[4].toUpperCase();
+    if (h === "S" || h === "W" || h === "O") v = -v; // O de Oeste, por si está en español
+    hallados.push({
+      v,
+      eje: h === "N" || h === "S" ? "lat" : "lng"
+    });
+  }
+  const lat = hallados.find(x => x.eje === "lat"),
+    lng = hallados.find(x => x.eje === "lng");
+  return lat && lng ? {
+    lat: lat.v,
+    lng: lng.v
+  } : null;
+};
 const leerCoordenadas = txt => {
   const t = String(txt || "").trim();
   if (!t) return null;
   const m = t.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/) || t.match(/[?&](?:q|query|daddr|ll)=(-?\d+(?:\.\d+)?)(?:,|%2C)\s*(-?\d+(?:\.\d+)?)/i) || t.match(/^(-?\d{1,2}(?:\.\d+)?)\s*[,;]\s*(-?\d{1,3}(?:\.\d+)?)$/);
-  if (!m) return null;
+  if (!m) {
+    const g = leerGrados(t);
+    return g && Math.abs(g.lat) <= 90 && Math.abs(g.lng) <= 180 ? g : null;
+  }
   const lat = parseFloat(m[1]),
     lng = parseFloat(m[2]);
   if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
@@ -426,6 +456,11 @@ const useContacts = () => {
       lat: null,
       lng: null
     };
+    // Si lo escrito en la dirección YA son coordenadas (pasa cuando se pegan
+    // ahí), se usan tal cual. Antes se les agregaba ", Argentina" y la búsqueda
+    // no devolvía nada, así que el contacto quedaba sin ubicación en el mapa.
+    const pegadas = leerCoordenadas(address);
+    if (pegadas) return pegadas;
     const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     const to = ctrl ? setTimeout(() => ctrl.abort(), 8000) : null;
     try {
