@@ -737,11 +737,21 @@ const ArticulosParada = ({parada,onGuardar}) => {
   useEffect(()=>{ if(!editando.current) setFilas(desdeParada(parada)); },[firma]);
 
   const limpiar = (fs) => fs
-    .map(f=>({
-      id: f.id,
-      articulo: (f.articulo||"").trim(),
-      cantidad: String(f.cantidad).trim()==="" ? "" : String(Math.max(0, Math.floor(Number(f.cantidad)||0))),
-    }))
+    .map(f=>{
+      let articulo = (f.articulo||"").trim();
+      let cantidad = String(f.cantidad==null?"":f.cantidad).trim();
+      // Si en la casilla del nombre hay SOLO un número y la cantidad está
+      // vacía, es la cantidad escrita en el casillero de al lado. Pasó durante
+      // un mes entero sin que nadie lo notara: el número quedaba guardado como
+      // nombre del artículo, el total daba cero y la anotación no aparecía en
+      // ningún lado. Se mueve sola y el chofer ve el número saltar de casilla.
+      if(cantidad==="" && /^\d+([.,]\d+)?$/.test(articulo)){ cantidad = articulo.replace(",","."); articulo = ""; }
+      return {
+        id: f.id,
+        articulo,
+        cantidad: cantidad==="" ? "" : String(Math.max(0, Math.floor(Number(cantidad)||0))),
+      };
+    })
     .filter(f=>f.articulo!=="" || Number(f.cantidad)>0);
 
   const totalDe = (fs) => fs.reduce((a,f)=>a+(Number(f.cantidad)||0),0);
@@ -776,25 +786,44 @@ const ArticulosParada = ({parada,onGuardar}) => {
   const conEnter = (e) => { if(e.key==="Enter") e.target.blur(); };
   const total = totalDe(limpiar(filas));
 
+  const tituloCol = {fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,fontWeight:700};
   return (
     <div>
+      {/* Títulos de columna visibles: antes solo había texto gris adentro de
+          cada casilla y se escribía la cantidad en la del nombre. */}
+      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}>
+        <span style={{...tituloCol,flex:1,minWidth:0}}>Artículo</span>
+        <span style={{...tituloCol,width:80,flexShrink:0}}>Cantidad</span>
+        <span style={{width:24,flexShrink:0}}/>
+      </div>
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
         {filas.map((f,i)=>{
           const tieneAlgo = (f.articulo||"").trim()!=="" || String(f.cantidad).trim()!=="";
+          // El chofer escribió un número donde va el nombre: se lo avisamos
+          // mientras escribe, y al salir del campo se mueve solo.
+          const numeroMalPuesto = String(f.cantidad).trim()==="" && /^\d+([.,]\d+)?$/.test((f.articulo||"").trim());
           return (
-            <div key={f.id} style={{display:"flex",gap:6,alignItems:"center"}}>
-              <input value={f.articulo} placeholder={i===0?"Artículo (ej: pantalón)":"Artículo"}
-                autoFocus={!!f.nueva} style={{flex:1,minWidth:0}}
-                onChange={e=>cambiar(f.id,"articulo",e.target.value)}
-                onBlur={alSalir} onKeyDown={conEnter}/>
-              <input value={f.cantidad} placeholder="Cant." type="number" inputMode="numeric" min="0"
-                style={{width:80,flexShrink:0}}
-                onChange={e=>cambiar(f.id,"cantidad",e.target.value)}
-                onBlur={alSalir} onKeyDown={conEnter}/>
-              {(filas.length>1 || tieneAlgo) ? (
-                <button onClick={()=>quitar(f.id)} title="Quitar este artículo"
-                  style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:16,padding:"0 4px",flexShrink:0}}>✕</button>
-              ) : <span style={{width:24,flexShrink:0}}/>}
+            <div key={f.id}>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input value={f.articulo} placeholder={i===0?"Artículo (ej: pantalón)":"Artículo"}
+                  autoFocus={!!f.nueva}
+                  style={{flex:1,minWidth:0,borderColor:numeroMalPuesto?C.warning:undefined}}
+                  onChange={e=>cambiar(f.id,"articulo",e.target.value)}
+                  onBlur={alSalir} onKeyDown={conEnter}/>
+                <input value={f.cantidad} placeholder="Cant." type="number" inputMode="numeric" min="0"
+                  style={{width:80,flexShrink:0}}
+                  onChange={e=>cambiar(f.id,"cantidad",e.target.value)}
+                  onBlur={alSalir} onKeyDown={conEnter}/>
+                {(filas.length>1 || tieneAlgo) ? (
+                  <button onClick={()=>quitar(f.id)} title="Quitar este artículo"
+                    style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:16,padding:"0 4px",flexShrink:0}}>✕</button>
+                ) : <span style={{width:24,flexShrink:0}}/>}
+              </div>
+              {numeroMalPuesto&&(
+                <p style={{color:C.warning,fontSize:11,marginTop:3,lineHeight:1.3}}>
+                  ⚠️ La cantidad va en la casilla de la derecha. Lo pasamos ahí solo.
+                </p>
+              )}
             </div>
           );
         })}
