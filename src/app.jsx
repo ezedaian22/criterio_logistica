@@ -132,6 +132,38 @@ const dirVisible = (c) => (c && c.address && c.address.trim())
 // A dónde se NAVEGA: la dirección si la tiene, y si no, las coordenadas.
 const destinoMaps = (c) => dirVisible(c);
 
+const DIAS = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+// "2026-10-23" -> "jueves 23/10". Se arma con las partes del texto, sin pasar
+// por zonas horarias, que ya nos hicieron correr la fecha una vez.
+const fechaLegible = (f) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(f||""));
+  if(!m) return String(f||"");
+  const d = new Date(Number(m[1]), Number(m[2])-1, Number(m[3]));
+  return `${DIAS[d.getDay()]} ${m[3]}/${m[2]}`;
+};
+
+// "Hoy" que se mantiene al día solo. El valor se calculaba una sola vez al
+// abrir la página: si la app quedaba abierta de un día para el otro, el
+// selector de fecha seguía marcando el día viejo y las rutas nuevas se creaban
+// con ESA fecha, así que no aparecían en el panel y el chofer no las veía.
+// Se revisa cada minuto y cada vez que se vuelve a la pantalla.
+const useHoy = () => {
+  const [hoy,setHoy] = useState(today());
+  useEffect(()=>{
+    const revisar = ()=>setHoy(h => { const n = today(); return n!==h ? n : h; });
+    const iv = setInterval(revisar, 60000);
+    const alVolver = ()=>{ if(document.visibilityState==="visible") revisar(); };
+    document.addEventListener("visibilitychange", alVolver);
+    window.addEventListener("focus", revisar);
+    return ()=>{
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", alVolver);
+      window.removeEventListener("focus", revisar);
+    };
+  },[]);
+  return hoy;
+};
+
 // Distancia en km entre dos puntos (fórmula del semiverseno). Estaba repetida
 // en el mapa y en el panel de cercanos; ahora hay una sola.
 const distKm = (lat1,lng1,lat2,lng2) => {
@@ -1481,7 +1513,20 @@ const MapaNuevaRuta = ({contacts,asignaciones,onAsignar}) => {
 };
 
 const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quitarParada,confirmarRuta,finalizarRuta,eliminarRuta,asegurarFecha,loading,currentUser,paradaActual}) => {
-  const [fecha,setFecha] = useState(today());
+  // El selector arranca en hoy y se mueve solo si cambia el día mientras la app
+  // está abierta. Si el admin eligió otra fecha a propósito, no se la tocamos.
+  const hoy = useHoy();
+  const [fecha,setFecha] = useState(hoy);
+  const hoyAnterior = useRef(hoy);
+  useEffect(()=>{
+    // El valor anterior se guarda en una variable ANTES de tocar el ref: la
+    // función que recibe setFecha la ejecuta React más tarde, y para entonces
+    // el ref ya apuntaba al día nuevo, así que la comparación nunca daba.
+    const anterior = hoyAnterior.current;
+    if(anterior === hoy) return;
+    hoyAnterior.current = hoy;
+    setFecha(f => f===anterior ? hoy : f);
+  },[hoy]);
   // Si la fecha elegida no está entre las que se cargaron al arrancar, se pide
   // a la base (ver asegurarFecha en useRutas).
   useEffect(()=>{ if(asegurarFecha) asegurarFecha(fecha); },[fecha]);
@@ -1868,9 +1913,23 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
         <div style={{position:"fixed",top:0,left:0,width:"100vw",height:"100vh",background:"#0f0f0f",zIndex:1000,display:"flex",flexDirection:"column"}}>
           {/* Header */}
           <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
-            <h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:C.accentLight}}>Nueva Ruta</h3>
+            {/* La fecha a la vista: la ruta se crea para la fecha del selector,
+                no necesariamente para hoy, y antes eso no se decía en ningún
+                lado. Si no es hoy, se avisa abajo en ámbar. */}
+            <h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:C.accentLight}}>
+              Nueva Ruta <span style={{fontSize:14,color:C.muted}}>· {fechaLegible(fecha)}</span>
+            </h3>
             <button onClick={()=>{setModal(false);setAsignacionesNuevaRuta({});}} style={{background:"none",color:C.muted,fontSize:22,border:"none",cursor:"pointer"}}>✕</button>
           </div>
+          {fecha!==hoy&&(
+            <div style={{background:C.warning+"22",borderBottom:`1px solid ${C.warning}55`,color:C.warning,padding:"8px 16px",fontSize:13,flexShrink:0,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{flex:1,minWidth:200}}>⚠️ Esta ruta se va a crear para el <b>{fechaLegible(fecha)}</b>, no para hoy.</span>
+              <button onClick={()=>setFecha(hoy)}
+                style={{background:C.warning,color:"#000",border:"none",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700,flexShrink:0}}>
+                Pasar a hoy ({fechaLegible(hoy)})
+              </button>
+            </div>
+          )}
 
           {/* Cuerpo: en pantalla ancha van mapa | cercanos en dos columnas;
               en celular se apilan y scrollea todo el cuerpo junto. */}
@@ -2055,7 +2114,7 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
               setEditandoAccion(null);
               setContactoId("");
             }} style={{flex:1,fontSize:15,padding:"14px"}} disabled={Object.keys(asignacionesNuevaRuta).length===0||saving}>
-              {saving?"Creando rutas...":"🚐 Crear rutas"}
+              {saving?"Creando rutas...":`🚐 Crear rutas para el ${fechaLegible(fecha)}`}
             </Btn>
             <Btn onClick={()=>{setModal(false);setAsignacionesNuevaRuta({});}} outline style={{padding:"14px 20px"}}>Cancelar</Btn>
           </div>
@@ -2138,7 +2197,20 @@ const RutasPanel = ({contacts,rutas,addRuta,actualizarParada,agregarParada,quita
   );
 }; 
 const ResumenPanel = ({rutas,loading,asegurarFecha}) => {
-  const [fecha,setFecha] = useState(today());
+  // El selector arranca en hoy y se mueve solo si cambia el día mientras la app
+  // está abierta. Si el admin eligió otra fecha a propósito, no se la tocamos.
+  const hoy = useHoy();
+  const [fecha,setFecha] = useState(hoy);
+  const hoyAnterior = useRef(hoy);
+  useEffect(()=>{
+    // El valor anterior se guarda en una variable ANTES de tocar el ref: la
+    // función que recibe setFecha la ejecuta React más tarde, y para entonces
+    // el ref ya apuntaba al día nuevo, así que la comparación nunca daba.
+    const anterior = hoyAnterior.current;
+    if(anterior === hoy) return;
+    hoyAnterior.current = hoy;
+    setFecha(f => f===anterior ? hoy : f);
+  },[hoy]);
   // Si la fecha elegida no está entre las que se cargaron al arrancar, se pide
   // a la base (ver asegurarFecha en useRutas).
   useEffect(()=>{ if(asegurarFecha) asegurarFecha(fecha); },[fecha]);
