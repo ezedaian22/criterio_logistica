@@ -36,11 +36,11 @@ const css = `
 
 const USERS = [
   {id:1,username:"Ezequiel",password:"Ecuador425",role:"admin",name:"Ezequiel"},
-  {id:2,username:"Kike",password:"berlingo",role:"chofer",name:"Kike",camionetaId:1},
+  {id:2,username:"Anibal",password:"berlingo",role:"chofer",name:"Anibal",camionetaId:1},
   {id:3,username:"Victor",password:"kangoo",role:"chofer",name:"Victor",camionetaId:2},
 ];
 const CAMIONETAS = [
-  {id:1,nombre:"Kangoo 1",chofer:"Kike",color:"#c9a96e"},
+  {id:1,nombre:"Kangoo 1",chofer:"Anibal",color:"#c9a96e"},
   {id:2,nombre:"Kangoo 2",chofer:"Victor",color:"#5c9ce0"},
 ];
 
@@ -1230,7 +1230,7 @@ const Login = ({onLogin}) => {
         <Card>
           <div style={{marginBottom:16}}>
             <label style={{fontSize:12,color:C.muted,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:6}}>Usuario</label>
-            <input value={u} onChange={e=>setU(e.target.value)} placeholder="Ezequiel / Kike / Victor" onKeyDown={e=>e.key==="Enter"&&handle()}/>
+            <input value={u} onChange={e=>setU(e.target.value)} placeholder="Ezequiel / Anibal / Victor" onKeyDown={e=>e.key==="Enter"&&handle()}/>
           </div>
           <div style={{marginBottom:20}}>
             <label style={{fontSize:12,color:C.muted,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:6}}>Contraseña</label>
