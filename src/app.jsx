@@ -737,10 +737,22 @@ const CampoParada = ({valor,onGuardar,...props}) => {
 
 // Detalle legible de lo que entregó un taller: "Pantalón 30 · Camisa 12".
 // Vacío si la parada no tiene artículos cargados (por ejemplo, rutas viejas).
-const detalleArticulos = (p) => (p && Array.isArray(p.articulos) ? p.articulos : [])
-  .filter(a => Number(a.cantidad) > 0)
-  .map(a => `${(a.articulo||"").trim() || "Sin nombre"} ${Number(a.cantidad)}`)
-  .join(" · ");
+//
+// Si NINGÚN artículo tiene nombre —el caso más común, porque suelen anotar solo
+// la cantidad— no se repite la etiqueta "Sin nombre", que era puro ruido al
+// lado del total: con un solo renglón no se muestra nada (el total ya lo dice)
+// y con varios se muestran solo los números, que sí informan.
+const detalleArticulos = (p) => {
+  const arts = (p && Array.isArray(p.articulos) ? p.articulos : [])
+    .filter(a => Number(a.cantidad) > 0);
+  if(arts.length === 0) return "";
+  if(!arts.some(a => (a.articulo||"").trim())){
+    return arts.length > 1 ? arts.map(a => String(Number(a.cantidad))).join(" · ") : "";
+  }
+  return arts
+    .map(a => `${(a.articulo||"").trim() || "Sin nombre"} ${Number(a.cantidad)}`)
+    .join(" · ");
+};
 
 // Renglones de artículo + cantidad, para cuando un taller entrega varias cosas.
 // Guarda la lista y, en el MISMO cambio, el total en `prendas`: así el Resumen,
@@ -2381,6 +2393,11 @@ const HistorialPanel = ({rutas,loading,eliminarRuta}) => {
                         {detalleArticulos(p)&&` (${detalleArticulos(p)})`}
                         {p.horaLlegada&&` · ${p.horaLlegada}`}
                       </p>
+                      {/* Las anotaciones también en el Historial: estaban
+                          guardadas pero solo se veían en el panel de Rutas, y
+                          ahí desaparecen cuando la ruta se finaliza. */}
+                      {p.instrucciones&&<p style={{color:C.warning,fontSize:12,marginTop:2}}>📋 {p.instrucciones}</p>}
+                      {p.nota&&<p style={{color:C.accent,fontSize:12,fontStyle:"italic",marginTop:2}}>"{p.nota}"</p>}
                     </div>
                     <span style={{fontSize:18}}>
                       {p.estado==="completada"?"✅":p.estado==="no_entregado"?"❌":"⏳"}
